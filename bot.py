@@ -600,13 +600,13 @@ def show_admins(state, uid, now):
         ("👑 Владелец: " if u["role"]=="owner" else "🛠 Админ: ")+(u["fullName"] or "ФИО не указано")+" · ID "+u["telegramUserId"]
         for u in staff) or "—")
     candidates=sorted((u for u in state["users"].values()
-        if u["role"] in ("member","admin") and u["accessStatus"]=="approved" and u["fullName"]),
+        if u["role"] in ("member","admin") and u["accessStatus"]=="approved" and (u["fullName"] or u["role"]=="admin")),
         key=lambda u:(u["role"]!="admin",u["fullName"].casefold(),u["telegramUserId"]))
     buttons=[[{"text":"Команда для админов","data":"admincode"}]]
     for target in candidates:
         remove=target["role"]=="admin"
         action="member" if remove else "admin"
-        label=("Снять: " if remove else "Назначить: ")+target["fullName"]+" · "+target["telegramUserId"]
+        label=("Снять: " if remove else "Назначить: ")+(target["fullName"] or "ФИО не указано")+" · "+target["telegramUserId"]
         buttons.append([{"text":label,"data":f"ar|{target['telegramUserId']}|{target.get('roleRevision',0)}|{action}"}])
     if not candidates:
         text+="\n\nДля назначения участник должен пройти /start и указать ФИО."
@@ -618,7 +618,7 @@ def set_admin_role(state, actor, target_id, expected, role, now):
     target=state["users"].get(target_id)
     if (not target or target_id==actor or target["role"] not in ("member","admin")
         or str(target.get("roleRevision",0))!=expected or role not in ("member","admin") or role==target["role"]
-        or target["accessStatus"]!="approved" or not target["fullName"]):
+        or target["accessStatus"]!="approved" or (role=="admin" and not target["fullName"])):
         return False
     old=target["role"]; target.update(role=role,roleRevision=target.get("roleRevision",0)+1)
     if role=="admin":
@@ -818,7 +818,7 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         queue_dialog(state,parts[1],
             "Вы назначены администратором. Доступны статистика, ручные отметки и управление тренировками."
             if promoted else "Права администратора сняты. Ваши подписки и ответы сохранены.",now,menu=True)
-        say(target["fullName"]+": "+("назначен администратором." if promoted else "права администратора сняты."))
+        say((target["fullName"] or "ID "+parts[1])+": "+("назначен администратором." if promoted else "права администратора сняты."))
         show_admins(state,uid,now);return
     if not is_admin(u):
         say("Выберите действие.",menu=True);return
