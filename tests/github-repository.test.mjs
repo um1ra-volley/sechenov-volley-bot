@@ -63,3 +63,15 @@ test('request-scoped state cache reuses unchanged blobs but checks branch head e
  const changed=structuredClone(http.states.base);changed.users['8']={telegramUserId:'8',privateChatId:'8',fullName:'Новый Игрок',role:'member',accessStatus:'approved',stage:'ready',registeredAt:now,deliveryStatus:'active'};
  http.states.external=changed;http.current='external';assert.equal(repo.read().users['8'].fullName,'Новый Игрок');
 });
+
+test('bootstrap uses canonical repository metadata URL and preserves an existing private store',()=>{
+ const http=new GitServer(),request=http.request.bind(http);
+ http.states.base.users['8']={telegramUserId:'8',privateChatId:'8',fullName:'Существующий Игрок',role:'member',accessStatus:'approved',stage:'ready',registeredAt:now,deliveryStatus:'active'};
+ http.request=(method,url,body,headers)=>{
+  if(url==='https://api.github.com/repos/example/bot')return http.response(200,{private:true});
+  if(url==='https://api.github.com/repos/example/bot/')return http.response(404,{message:'Not Found'});
+  return request(method,url,body,headers);
+ };
+ const result=repository(http).initialise(createState('other',1));
+ assert.equal(result.users['8'].fullName,'Существующий Игрок');assert.equal(result.runtime.id,'gas-primary');assert.equal(http.current,'base');
+});
