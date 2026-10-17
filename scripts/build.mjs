@@ -1,0 +1,11 @@
+import {build} from 'esbuild';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+const result=await build({entryPoints:['src/adapters/apps-script/entry.ts'],bundle:true,write:false,format:'iife',globalName:'VolleyBot',platform:'neutral',target:['es2020'],legalComments:'none',define:{__BUILD_SHA__:JSON.stringify(process.env.GITHUB_SHA??'development')}});
+const names=['doPost','scheduledTick','setup','status','configureWebhook','pauseRuntime','activateRuntime'];
+const footer=names.map(name=>'function '+name+'('+ (name==='doPost'?'e':'') +'){ return VolleyBot.'+name+'('+ (name==='doPost'?'e':'') +'); }').join('\n');
+const code=result.outputFiles[0].text+'\n'+footer+'\n';
+if(/\b\d{8,12}:[A-Za-z0-9_-]{30,}\b|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}/.test(code))throw new Error('Credential-like content in build');
+await mkdir('dist',{recursive:true});
+await writeFile('dist/Code.gs',code);
+await writeFile('dist/appsscript.json',await readFile('appsscript.json','utf8'));
+console.log('Apps Script bundle prepared; no deployment or messages performed.');

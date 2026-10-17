@@ -1,4 +1,5 @@
-import { moscowInstant, validateDate } from '../core/time.ts';
+import { archiveState } from '../core/archive.ts';
+import { localDateOf, validateDate } from '../core/time.ts';
 import { planNotifications, canDeliver } from '../core/reminders.ts';
 import { synchronize } from '../core/schedule.ts';
 import type { SourceSnapshot } from '../core/model.ts';
@@ -17,6 +18,7 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
  if((command.updateId&&input.processedUpdates[command.updateId])||input.operations.some(o=>o.operationId===command.operationId))return {state:input,effects:[],duplicate:true};
  const state:State=JSON.parse(JSON.stringify(input)), data=command.data, actor=command.actorId;
  let previous:unknown,next:unknown,targetId:string|undefined;
+ let writes:{path:string;content:string}[]=[];
  switch(command.type){
  case 'START':{
   const id=userId(actor??'');const chatId=userId(text(data,'chatId'));if(id!==chatId)throw new Error('Нужен личный чат');
@@ -49,7 +51,7 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
   else if(data.action==='restore'){event.status='scheduled';event.attendanceRevision++;}
   else if(data.action==='move'){
    const date=validateDate(text(data,'localDate')),instant=text(data,'startAtUtc');
-   if(!Number.isFinite(Date.parse(instant))||Date.parse(instant)<=Date.parse(now)||instant.slice(0,10)!==date)throw new Error('Некорректная будущая дата');
+   if(!Number.isFinite(Date.parse(instant))||Date.parse(instant)<=Date.parse(now)||localDateOf(instant)!==date)throw new Error('Некорректная будущая дата');
    event.localDate=date;event.startAtUtc=instant;event.status='postponed';event.attendanceRevision++;
   }else throw new Error('Некорректная команда тренировки');
   event.revision++;next=JSON.parse(JSON.stringify(event));delete user.pendingAction;
@@ -78,13 +80,20 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
   if(id!==performer.telegramUserId)owner(state,actor);
   const user=requireUser(state,id);if(user.accessStatus!=='approved')throw new Error('Нет доступа');
   const eventId=text(data,'eventId'),event=state.events[eventId];if(!event)throw new Error('Игра не найдена');
-  if(!isUpcoming(event,now))throw new Error('Событие уже началось или завершено');
+  if(!isUpcoming(event,now)&&performer.role!=='owner')throw new Error('Событие уже началось или завершено');
   if(!(state.subscriptions[id]??[]).includes(event.scope))throw new Error('Нет подписки на эту лигу');
   if(data.revision!==event.attendanceRevision)throw new Error('Устаревшая версия игры: откройте новую карточку');
   if(data.answer!=='yes'&&data.answer!=='no')throw new Error('Выберите Буду или Не буду');
   const key=eventId+':'+id,old=state.participation[key];previous=old??null;targetId=key;
-  state.participation[key]={eventId,telegramUserId:id,attendanceRevision:event.attendanceRevision,answer:data.answer,invitedAt:old?.invitedAt??now,firstPollSentAt:old?.firstPollSentAt??null,answeredAt:now,answerSource:id===performer.telegramUserId?'user':'admin'};
+  state.participation[key]={eventId,telegramUserId:id,attendanceRevision:event.attendanceRevision,answer:data.answer,invitedAt:old?.invitedAt??now,firstPollSentAt:old?.firstPollSentAt??null,answeredAt:now,answerSource:performer.role==='owner'&&typeof data.userId==='string'?'admin':'user'};
   next=state.participation[key];break;
+ }
+ case 'SET_PAUSED':{
+  if(actor!==undefined||typeof data.paused!=='boolean')throw new Error('Нет прав доступа');state.runtime.paused=data.paused;break;
+ }
+ case 'ARCHIVE':{
+  if(actor!==undefined)throw new Error('Нет прав доступа');
+  const result=archiveState(state,now);Object.assign(state,result.state);writes=result.writes;break;
  }
  case 'PLAN_NOTIFICATIONS':{
   if(actor!==undefined)throw new Error('Нет прав доступа');
@@ -138,5 +147,5 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
  if(command.updateId)state.processedUpdates[command.updateId]=now;
  state.stateVersion++;
  state.operations.push({operationId:command.operationId,actorId:actor,action:command.type,targetId,at:now,result:'ok',previous,next});
- return {state,effects,duplicate:false};
+ return {state,effects,duplicate:false,writes};
 }

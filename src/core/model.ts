@@ -30,16 +30,17 @@ export interface Notification {
 export interface SourceState { lastSuccessAt?:string; lastError?:string; missing:Record<string,number>; snapshotHash?:string }
 export interface Operation { operationId:string; actorId?:string; action:string; targetId?:string; at:string; result:string; previous?:unknown; next?:unknown }
 export interface State {
-  schemaVersion:1; stateVersion:number; runtime:Runtime;
+  schemaVersion:1; stateVersion:number; runtime:Runtime; archives?:string[]; lastArchiveAt?:string;
   users:Record<string,User>; subscriptions:Record<string,Scope[]>; events:Record<string,Event>;
   participation:Record<string,Participation>; notifications:Record<string,Notification>;
   processedUpdates:Record<string,string>; sourceState:Record<string,SourceState>; operations:Operation[];
 }
 export interface Command { type:string; operationId:string; updateId?:string; actorId?:string; data:Record<string,unknown>; effects?:Effect[] }
-export interface ApplyResult { state:State; effects:Effect[]; duplicate:boolean }
+export interface ApplyResult { state:State; effects:Effect[]; duplicate:boolean; writes?:{path:string;content:string}[] }
 export interface SourceSnapshot { sourceId:string; ok:boolean; events:Event[]; observedAt:string; error?:string }
 export interface HttpResponse { status:number; body:string; headers:Record<string,string> }
-export interface HttpClient { request(method:string,url:string,body?:unknown,headers?:Record<string,string>):HttpResponse }
+export interface HttpRequest {method:string;url:string;body?:unknown;headers?:Record<string,string>}
+export interface HttpClient { batch?(requests:HttpRequest[]):HttpResponse[]; request(method:string,url:string,body?:unknown,headers?:Record<string,string>):HttpResponse }
 export interface Clock { now():string }
 export interface StateRepository { read():State; transact(command:Command,expectedRuntime?:{id:string;epoch:number}):ApplyResult }
 export interface TelegramTransport { send(message:Message):string; edit(message:Message):void; acknowledge(callbackId:string):void }

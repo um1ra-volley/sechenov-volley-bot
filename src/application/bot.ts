@@ -55,13 +55,13 @@ export function handleUpdate(update:unknown,dependencies:BotDependencies):{accep
   }else if(callback&&parts[0]==='list'&&['week','month','training'].includes(parts[1])){
    effects=[ui.eventList(state,user,parts[1],index(parts[2]),now)];
   }else if(callback&&parts[0]==='view'&&parts.length===2){
-   const e=event(parts[1]);available(e);effects=[ui.fullCard(user,e,now)];
+   const e=event(parts[1]);available(e);effects=[ui.fullCard(user,e,now,'',state)];
   }else if(callback&&parts[0]==='answers'){
    effects=[ui.answers(state,user,index(parts[1]),now)];
   }else if(callback&&parts[0]==='r'&&parts.length===4&&['y','n'].includes(parts[3])){
    const e=event(parts[1]);available(e);
-   if(Number(parts[2])!==e.attendanceRevision)effects=[ui.fullCard(user,e,now,'Расписание изменилось. Подтвердите участие заново.')];
-   else{command.type='RSVP';command.data={eventId:e.eventId,revision:Number(parts[2]),answer:parts[3]==='y'?'yes':'no'};effects=[ui.fullCard(user,e,now,'Ваш ответ: '+(parts[3]==='y'?'Буду':'Не буду'))];}
+   if(Number(parts[2])!==e.attendanceRevision)effects=[ui.fullCard(user,e,now,'Расписание изменилось. Подтвердите участие заново.',state)];
+   else{command.type='RSVP';command.data={eventId:e.eventId,revision:Number(parts[2]),answer:parts[3]==='y'?'yes':'no'};effects=[ui.fullCard(user,e,now,'Ваш ответ: '+(parts[3]==='y'?'Буду':'Не буду'),state)];}
   }else if(callback&&parts[0]==='access'&&parts.length===3){
    owner();const target=state.users[parts[1]];if(!target)throw new Error('Участник не найден');
    command.type=parts[2]==='approve'?'APPROVE':'REJECT';command.data={userId:target.telegramUserId};

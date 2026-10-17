@@ -1,5 +1,6 @@
 import type {Clock,StateRepository,TelegramTransport,SourceSnapshot} from '../core/model.ts';
 import {canDeliver} from '../core/reminders.ts';
+import {localDateOf} from '../core/time.ts';
 import {generateTrainings} from '../core/training.ts';
 import {TelegramError} from '../adapters/telegram/transport.ts';
 export function deliverDue(repository:StateRepository,transport:TelegramTransport,now:string,limit:number,targetUsers?:string[]):{sent:number;failed:number}{
@@ -47,5 +48,7 @@ export function handleTick(dependencies:TickDependencies):{sent:number;failed:nu
  snapshots.push({sourceId:'TRAINING',ok:true,events:generateTrainings(now,8,Object.values(state.events)),observedAt:now});
  repository.transact({type:'SYNC_SOURCES',operationId:'sync:'+now,data:{snapshots}});
  repository.transact({type:'PLAN_NOTIFICATIONS',operationId:'plan:'+now,data:{}});
- return deliverDue(repository,transport,clock.now(),20);
+ const report=deliverDue(repository,transport,clock.now(),20);
+ const current=repository.read();if(!current.lastArchiveAt||localDateOf(current.lastArchiveAt)!==localDateOf(now))repository.transact({type:'ARCHIVE',operationId:'archive:'+localDateOf(now),data:{}});
+ return report;
 }

@@ -23,8 +23,12 @@ export function subscriptions(user:User,selected:Scope[]):Effect{
  [{text:'Готово',data:'finish'}]
  ]);
 }
-export function fullCard(user:User,event:Event,now:string,prefix=''):Effect{
- return message(user,(prefix?prefix+'\n\n':'')+eventCard(event,now),[...attendanceButtons(event),...back()]);
+function checkedCard(state:State|undefined,event:Event,now:string):string{
+ const source=state?.sourceState[event.sourceKey];
+ return eventCard(event,now)+(source?.lastError?'\n⚠️ Источник недоступен. Последняя проверка: '+(source.lastSuccessAt?dateLabel(localDateOf(source.lastSuccessAt))+' '+localTimeOf(source.lastSuccessAt)+' МСК':'не завершена'):'');
+}
+export function fullCard(user:User,event:Event,now:string,prefix='',state?:State):Effect{
+ return message(user,(prefix?prefix+'\n\n':'')+checkedCard(state,event,now),[...attendanceButtons(event),...back()]);
 }
 function page<T>(items:T[],index:number,size=3):T[]{return items.slice(Math.max(0,index)*size,(Math.max(0,index)+1)*size);}
 function pages(index:number,count:number,prefix:string,size=3):Button[][]{
@@ -34,14 +38,14 @@ export function eventList(state:State,user:User,period:string,index:number,now:s
  const scopes=state.subscriptions[user.telegramUserId]??[];
  const active=period==='training'?scopes.filter(s=>s==='TRAINING'):scopes.filter(s=>s!=='TRAINING');
  const events=listUpcoming(Object.values(state.events),active,period==='week'?'week':period==='month'?'month':'all',now),items=page(events,index);
- return message(user,items.length?items.map(e=>eventCard(e,now)).join('\n\n'):'В этом периоде событий по вашим подпискам нет.',[
+ return message(user,items.length?items.map(e=>checkedCard(state,e,now)).join('\n\n'):'В этом периоде событий по вашим подпискам нет.',[
  ...items.map(e=>[{text:'Ответить · '+e.localDate.slice(8)+'.'+e.localDate.slice(5,7)+' · '+SCOPE_LABELS[e.scope],data:'view|'+e.eventId}]),
  ...pages(index,events.length,'list|'+period),...back()]);
 }
 export function answers(state:State,user:User,index:number,now:string):Effect{
  const entries=Object.values(state.participation).filter(p=>p.telegramUserId===user.telegramUserId&&state.events[p.eventId]).sort((a,b)=>state.events[a.eventId].localDate.localeCompare(state.events[b.eventId].localDate));
  const items=page(entries,index);
- return message(user,items.length?items.map(p=>eventCard(state.events[p.eventId],now)+'\nОтвет: '+(p.attendanceRevision!==state.events[p.eventId].attendanceRevision?'нужно подтвердить заново':p.answer==='yes'?'Буду':p.answer==='no'?'Не буду':'не ответили')).join('\n\n'):'Ответов пока нет.',[...items.map(p=>[{text:'Открыть '+p.eventId,data:'view|'+p.eventId}]),...pages(index,entries.length,'answers'),...back()]);
+ return message(user,items.length?items.map(p=>checkedCard(state,state.events[p.eventId],now)+'\nОтвет: '+(p.attendanceRevision!==state.events[p.eventId].attendanceRevision?'нужно подтвердить заново':p.answer==='yes'?'Буду':p.answer==='no'?'Не буду':'не ответили')).join('\n\n'):'Ответов пока нет.',[...items.map(p=>[{text:'Открыть '+p.eventId,data:'view|'+p.eventId}]),...pages(index,entries.length,'answers'),...back()]);
 }
 export function adminEvents(state:State,user:User,index:number,now:string,training=false):Effect{
  const start=addDays(localDateOf(now),-30);
@@ -76,7 +80,12 @@ export function manualParticipants(state:State,user:User,event:Event,index:numbe
 }
 export function history(state:State,user:User,index:number):Effect{
  const entries=state.operations.filter(o=>o.action==='RSVP'||o.action==='TRAINING_EXCEPTION').slice().reverse(),items=page(entries,index,6);
- return message(user,items.length?items.map(o=>dateLabel(localDateOf(o.at))+' '+localTimeOf(o.at)+' · '+(o.actorId?state.users[o.actorId]?.fullName??o.actorId:'система')+' · '+o.action+' · '+(o.targetId??'')).join('\n'):'История ответов пока пуста.',[...pages(index,entries.length,'admin|history',6),...back()]);
+ return message(user,items.length?items.map(o=>{
+  const next=o.next as {telegramUserId?:string;answer?:string}|undefined,previous=o.previous as {answer?:string}|undefined;
+  const target=next?.telegramUserId?state.users[next.telegramUserId]?.fullName??next.telegramUserId:o.targetId??'';
+  const label=(value:string|undefined)=>value==='yes'?'Будет':value==='no'?'Не будет':'Нет ответа';
+  return dateLabel(localDateOf(o.at))+' '+localTimeOf(o.at)+' · '+(o.actorId?state.users[o.actorId]?.fullName??o.actorId:'система')+' → '+target+' · '+(o.action==='RSVP'?label(previous?.answer)+' → '+label(next?.answer):'изменение тренировки');
+ }).join('\n'):'История ответов пока пуста.',[...pages(index,entries.length,'admin|history',6),...back()]);
 }
 export function status(state:State,user:User):Effect{
  const counts:Record<string,number>={};for(const n of Object.values(state.notifications))counts[n.status]=(counts[n.status]??0)+1;

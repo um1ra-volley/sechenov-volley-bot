@@ -42,3 +42,10 @@ Task 5 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/3903693557
 Task 5: complete (commits 045fb5d..47fc248; npm test 69/69, typecheck passed; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39037152938).
 Task 6: in progress; BASE 47fc248cf1a1c92e215219afbc92776a84cd2661.
 Additional boundary checks: stale-source labels, midnight Moscow move, post-start owner correction, useful audit details and archival are included before runtime build.
+
+Task 6 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39037598592 — 69 passed, 10 failed: runtime/build/archive absent and four operational boundaries reproduced.
+Task 6 cache RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39038079575 — extra snapshot-read test failed. Without request-scoped reuse, six full reads × 12 calls × 288 idle ticks would exceed 20,000 URL Fetch/day. Fix reuses unchanged blobs in memory after checking current Git head on every read.
+Task 6 bootstrap RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39038382238 — real-storage smoke stopped before any write because initialise was absent.
+Boundary root causes: source menus omitted health labels; training validation compared UTC date with Moscow date; past-RSVP guard did not exempt owner corrections; audit UI omitted old/new answers and target name. Each has its own failing test before these changes.
+Ruling: cloud tests require commits on the isolated feature branch before execution — owner forbids local execution/files — cost if wrong: intermediate unverified commits exist only on the feature branch; merge and launch remain gated by CI and review.
+Ruling: initial Google publication uses the reviewed GitHub artifact directly in the browser — avoids local OAuth credential files — cost if wrong: automatic CI publication needs a separate Google OAuth setup; manual version updates remain available.
