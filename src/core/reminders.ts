@@ -12,6 +12,10 @@ export function canDeliver(state:State,n:Notification,now:string):boolean{
  const user=state.users[n.userId];if(!user||user.deliveryStatus==='blocked')return false;
  if(!n.eventId)return true;
  const e=state.events[n.eventId];if(!e||user.accessStatus!=='approved'||!(state.subscriptions[n.userId]??[]).includes(e.scope)||e.revision!==n.revision)return false;
+ if(n.type==='followup'){
+  const answer=state.participation[e.eventId+':'+n.userId];
+  if(answer?.answer&&answer.attendanceRevision===e.attendanceRevision)return false;
+ }
  return n.type==='change'||isUpcoming(e,now);
 }
 function has(state:State,e:Event,u:User,kind:string):boolean{
