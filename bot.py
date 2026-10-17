@@ -280,6 +280,19 @@ def is_owner(user):
 def is_admin(user):
     return user.get("role") in ("owner","admin") and user.get("accessStatus")=="approved"
 
+def admit_named_user(state, uid, now):
+    user=state["users"][uid]
+    if not user.get("fullName") or user["accessStatus"]=="approved":
+        return False
+    previous=user["accessStatus"]
+    user["accessStatus"]="approved"
+    user.pop("requestSentAt",None)
+    for notice in state["notifications"].values():
+        if notice["userId"]==uid and notice["type"]=="ui" and notice["status"] in ("pending","retry"):
+            notice["status"]="cancelled"
+    audit(state,"ACCESS_AUTO_GRANTED",now,uid,target=uid,previous=previous,next_value="approved")
+    return True
+
 def event_stats(state, eid):
     event=state["events"][eid]
     result={k:[] for k in ("yes","no","unanswered","reconfirm")}
@@ -293,9 +306,34 @@ def event_stats(state, eid):
         values.sort(key=lambda u:u["fullName"].casefold())
     return result
 
+def latest_prompt_at(state, event, uid, exclude=None):
+    stamps=[]
+    participation=state["participation"].get(event["eventId"]+":"+uid,{})
+    if participation.get("pollRevision")==event["attendanceRevision"] and participation.get("firstPollSentAt"):
+        stamps.append(participation["firstPollSentAt"])
+    for n in state["notifications"].values():
+        if (n["notificationId"]==exclude or n.get("eventId")!=event["eventId"] or n["userId"]!=uid
+            or n.get("attendanceRevision")!=event["attendanceRevision"] or n["type"]=="ui"
+            or not n["message"].get("buttons")):
+            continue
+        at=n.get("sentAt") if n["status"]=="sent" else n.get("sendingAt") if (
+            n["status"] in ("sending","uncertain") or (n["status"]=="cancelled" and n.get("terminal"))) else None
+        if at:
+            stamps.append(at)
+    return iso(max(map(instant,stamps))) if stamps else None
+
+def waiting_prompt(state, event, uid):
+    return any(n.get("eventId")==event["eventId"] and n["userId"]==uid
+        and n.get("attendanceRevision")==event["attendanceRevision"] and n.get("revision")==event["revision"]
+        and n["type"]!="ui" and n["status"] in ("pending","retry","sending") and n["message"].get("buttons")
+        for n in state["notifications"].values())
+
 def can_deliver(state, notice, now):
     uid=notice["userId"]; user=state["users"].get(uid)
     if not user or user.get("deliveryStatus")=="blocked":
+        return False
+    if any(button.get("data","").startswith("approve|")
+        for row in notice["message"].get("buttons",[]) for button in row):
         return False
     required=notice.get("requiredRole")
     if required and not (is_owner(user) if required=="owner" else is_admin(user) if required=="admin" else False):
@@ -308,8 +346,11 @@ def can_deliver(state, notice, now):
         return False
     if "followup" in notice.get("fulfills",[notice["type"]]):
         p=state["participation"].get(eid+":"+uid,{})
-        if p.get("answer") and p.get("attendanceRevision")==e["attendanceRevision"] and notice["type"]=="followup":
-            return False
+        if notice["type"]=="followup":
+            if p.get("answer") and p.get("attendanceRevision")==e["attendanceRevision"]:
+                return False
+            if notice.get("followupAfter") and latest_prompt_at(state,e,uid,exclude=notice["notificationId"])!=notice["followupAfter"]:
+                return False
     return notice["type"] in ("change","ui") or upcoming(e,now)
 
 def has_notice(state, event, uid, kind):
@@ -318,9 +359,11 @@ def has_notice(state, event, uid, kind):
         and (n["status"]!="cancelled" or n.get("terminal"))
         and kind in n.get("fulfills",[n["type"]]) for n in state["notifications"].values())
 
-def make_notice(state, event, uid, kinds, title, now, due=None, old=None):
+def make_notice(state, event, uid, kinds, title, now, due=None, old=None, followup_after=None):
     eid, revision=event["eventId"], event["attendanceRevision"]
     tail="change-"+str(event["revision"]) if "change" in kinds else "+".join(sorted(kinds))
+    if followup_after and "followup" in kinds:
+        tail+="-"+hashlib.sha256(followup_after.encode()).hexdigest()[:12]
     key=f"notice:{eid}:{revision}:{uid}:{tail}"
     existing=state["notifications"].get(key)
     if existing and (existing["status"]!="cancelled" or existing.get("terminal")):
@@ -344,6 +387,8 @@ def make_notice(state, event, uid, kinds, title, now, due=None, old=None):
     state["notifications"][key]=dict(notificationId=key,eventId=eid,userId=uid,scope=event["scope"],
         revision=event["revision"],attendanceRevision=revision,type=kind,fulfills=kinds,dueAt=due or now,
         status="pending",attempts=0,message=message)
+    if followup_after:
+        state["notifications"][key]["followupAfter"]=followup_after
 
 def plan_notifications(state, now):
     clock=instant(now)
@@ -387,18 +432,19 @@ def plan_notifications(state, now):
             if not subscribed(state,uid,e["scope"]) or state["users"][uid]["deliveryStatus"]=="blocked":
                 continue
             p=state["participation"].get(e["eventId"]+":"+uid,{})
+            last_prompt=latest_prompt_at(state,e,uid)
             kinds=[]
             if clock>=start-timedelta(days=7) and not has_notice(state,e,uid,"poll"):
                 kinds.append("poll")
             if clock>=start-timedelta(days=1) and not has_notice(state,e,uid,"day"):
                 kinds.append("day")
-            if (not p.get("answer") or p.get("attendanceRevision")!=e["attendanceRevision"]) and p.get("pollRevision")==e["attendanceRevision"] and p.get("firstPollSentAt") and clock>=instant(p["firstPollSentAt"])+timedelta(days=1) and not has_notice(state,e,uid,"followup"):
+            if (not p.get("answer") or p.get("attendanceRevision")!=e["attendanceRevision"]) and last_prompt and clock>=instant(last_prompt)+timedelta(days=1) and not waiting_prompt(state,e,uid):
                 kinds.append("followup")
             if not kinds:
                 continue
             title="⏰ Напоминание о ближайшем событии" if "day" in kinds else "Вы ещё не ответили. Будете?" if "followup" in kinds else "Будете участвовать?"
-            due=start-timedelta(days=1) if "day" in kinds else instant(p["firstPollSentAt"])+timedelta(days=1) if "followup" in kinds else start-timedelta(days=7)
-            make_notice(state,e,uid,kinds,title,now,iso(due))
+            due=start-timedelta(days=1) if "day" in kinds else instant(last_prompt)+timedelta(days=1) if "followup" in kinds else start-timedelta(days=7)
+            make_notice(state,e,uid,kinds,title,now,iso(due),followup_after=last_prompt if "followup" in kinds else None)
 
 def archive_state(state, now):
     cutoff=(instant(now).astimezone(MSK).date()-timedelta(days=90)).isoformat()
@@ -443,7 +489,7 @@ def archive_state(state, now):
 def menu_markup(role="member"):
     rows=[["📅 Игры на неделю","🗓 Игры в этом месяце"],["🏐 Тренировки","⚙️ Подписки"],["👤 Моё ФИО"]]
     if role in ("owner","admin"):
-        rows += [["📊 Статистика","👥 Заявки"],["⚙️ Состояние","🛠 Тренировки"]]
+        rows += [["📊 Статистика"],["⚙️ Состояние","🛠 Тренировки"]]
     if role=="owner":
         rows += [["👑 Администраторы"]]
     return {"keyboard":[[{"text":text} for text in row] for row in rows],"resize_keyboard":True}
@@ -540,7 +586,7 @@ def show_admins(state, uid, now):
         label=("Снять: " if remove else "Назначить: ")+target["fullName"]+" · "+target["telegramUserId"]
         buttons.append([{"text":label,"data":f"ar|{target['telegramUserId']}|{target.get('roleRevision',0)}|{action}"}])
     if not candidates:
-        text+="\n\nДля назначения участник должен пройти /start, указать ФИО и получить одобрение в «Заявках»."
+        text+="\n\nДля назначения участник должен пройти /start и указать ФИО."
     queue_dialog(state,uid,text,now,buttons,menu=True,required_role="owner")
 
 def set_admin_role(state, actor, target_id, expected, role, now):
@@ -630,6 +676,8 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         accessStatus="pending",stage="name",registeredAt=now,deliveryStatus="active"))
     u["privateChatId"]=chat; u["deliveryStatus"]="active"
     say=lambda text,buttons=None,menu=False:queue_dialog(state,uid,text,now,buttons,menu=menu)
+    for registered_uid in state["users"]:
+        admit_named_user(state,registered_uid,now)
     if text.startswith("/owner "):
         supplied=text.partition(" ")[2]
         if not any(v["role"]=="owner" for v in state["users"].values()) and setup_secret and hmac.compare_digest(supplied.encode('utf-8'),setup_secret.encode('utf-8')):
@@ -653,6 +701,7 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         previous=u["fullName"];u.update(fullName=text,stage="subscriptions")
         u.pop("editName",None)
         audit(state,"NAME_SET",now,uid,target=uid,previous=previous,next_value=text)
+        admit_named_user(state,uid,now)
         subscription_dialog(state,uid,now);return
     if data and (data.startswith("s|") or data=="done"):
         if data.startswith("s|"):
@@ -665,23 +714,14 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
             subscription_dialog(state,uid,now)
         else:
             u["stage"]="ready"
-            if u["accessStatus"]=="pending":
-                say("Подписки сохранены. Заявка отправлена администраторам.",menu=True)
-                if not u.get("requestSentAt"):
-                    u["requestSentAt"]=now
-                    for owner_id,owner in state["users"].items():
-                        if is_admin(owner):
-                            queue_dialog(state,owner_id,"Заявка на доступ: "+u["fullName"],now,
-                                [[{"text":"Одобрить","data":"approve|"+uid+"|y"},{"text":"Отклонить","data":"approve|"+uid+"|n"}]])
-            else:
-                say("Подписки сохранены.",menu=True)
+            say("Подписки сохранены.",menu=True)
         return
     if text in ("/subscriptions","⚙️ Подписки"):
         subscription_dialog(state,uid,now); return
     if text in ("/name","👤 Моё ФИО"):
         u["editName"]=True; say("Пришлите новое ФИО."); return
     if u["accessStatus"]!="approved":
-        say("Ожидается подтверждение администратора." if u["accessStatus"]=="pending" else "Заявка отклонена администратором."); return
+        say("Для доступа укажите ФИО через /start."); return
     if data and data.startswith("r|"):
         parts=data.split("|")
         e=state["events"].get(parts[1]) if len(parts)==4 else None
@@ -702,11 +742,11 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
             show_admins(state,uid,now);return
         parts=data.split("|")
         if len(parts)!=4 or not set_admin_role(state,uid,parts[1],parts[2],parts[3],now):
-            say("Список устарел или участник ещё не одобрен. Откройте «Администраторы» заново.");return
+            say("Список устарел или участник ещё не указал ФИО. Откройте «Администраторы» заново.");return
         promoted=parts[3]=="admin"
         target=state["users"][parts[1]]
         queue_dialog(state,parts[1],
-            "Вы назначены администратором. Доступны статистика, заявки, ручные отметки и управление тренировками."
+            "Вы назначены администратором. Доступны статистика, ручные отметки и управление тренировками."
             if promoted else "Права администратора сняты. Ваши подписки и ответы сохранены.",now,menu=True)
         say(target["fullName"]+": "+("назначен администратором." if promoted else "права администратора сняты."))
         show_admins(state,uid,now);return
@@ -726,24 +766,8 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         say("Рассылки приостановлены." if text=="/pause" else "Рассылки включены.",menu=True);return
     if text in ("/sync","Проверить расписание"):
         state["lastSyncAt"]=None;say("Проверка расписания запрошена.");return
-    if text in ("/pending","👥 Заявки"):
-        applicants=[v for v in state["users"].values() if v["accessStatus"]=="pending" and v["fullName"]]
-        if not applicants:
-            say("Новых заявок нет.")
-        for applicant in applicants:
-            target=applicant["telegramUserId"]
-            say(applicant["fullName"],[[{"text":"Одобрить","data":f"approve|{target}|y"},{"text":"Отклонить","data":f"approve|{target}|n"}]])
-        return
-    if data and data.startswith("approve|"):
-        parts=data.split("|")
-        target=state["users"].get(parts[1]) if len(parts)==3 else None
-        if not target or target["role"]!="member" or parts[2] not in ("y","n"):
-            return
-        target["accessStatus"]="approved" if parts[2]=="y" else "rejected"
-        audit(state,"ACCESS_SET",now,uid,target=parts[1],next_value=target["accessStatus"])
-        say(target["fullName"]+": "+("доступ открыт." if parts[2]=="y" else "заявка отклонена."))
-        queue_dialog(state,parts[1],"Доступ подтверждён. Выберите действие." if parts[2]=="y" else "Заявка отклонена администратором.",now,menu=parts[2]=="y")
-        return
+    if text in ("/pending","👥 Заявки") or (data and data.startswith("approve|")):
+        say("Ручное одобрение отключено. После ввода ФИО доступ открывается автоматически.",menu=True);return
     if text in ("/stats","📊 Статистика","🛠 Тренировки"):
         training=text=="🛠 Тренировки"
         today=instant(now).astimezone(MSK).date()
@@ -1120,6 +1144,9 @@ class VolleyBot:
             self.check_lease(current,now)
             if current["runtime"].get("paused"):
                 return
+            for uid in current["users"]:
+                if admit_named_user(current,uid,now):
+                    queue_dialog(current,uid,"Доступ открыт автоматически. Одобрение больше не требуется.",now,menu=True)
             synchronize(current,snapshots,now)
             generate_trainings(current,now)
             plan_notifications(current,now)
