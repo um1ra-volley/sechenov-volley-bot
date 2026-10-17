@@ -55,3 +55,11 @@ test('GitHub error never pretends to preserve a registration',()=>{
  const http={request(){return {status:503,body:'unavailable',headers:{}}}};
  const repo=repository(http);assert.throws(()=>repo.transact({type:'START',operationId:'x',actorId:'2',data:{chatId:'2'}}),/GitHub|доступ/i);
 });
+
+test('request-scoped state cache reuses unchanged blobs but checks branch head every read',()=>{
+ const http=new GitServer();let requests=0;const request=http.request.bind(http);
+ http.request=(...args)=>{requests++;return request(...args)};
+ const repo=repository(http);repo.read();const before=requests;repo.read();assert.equal(requests-before,1,'unchanged snapshot should only read branch head');
+ const changed=structuredClone(http.states.base);changed.users['8']={telegramUserId:'8',privateChatId:'8',fullName:'Новый Игрок',role:'member',accessStatus:'approved',stage:'ready',registeredAt:now,deliveryStatus:'active'};
+ http.states.external=changed;http.current='external';assert.equal(repo.read().users['8'].fullName,'Новый Игрок');
+});
