@@ -37,3 +37,5 @@ Repeated attendance reminders: replace the single follow-up with a durable daily
 Ruling: preserve the user's no-tests/no-local-source constraints; static syntax/read-through only. Main remains the delivery branch; publish with [skip ci].
 
 Independent static review of d41c834..ada6785 found no consequential Critical/Important/Minor issues, Declined-to-judge []. Reviewed admission, stale approval retirement, daily anchor/key and pending guards, final delivery role/answer/version checks, mandatory day notice and persisted legacy metadata. Training '2 before' unit is still pending the user's required clarification and unchanged by this independent patch. No tests or production calls.
+
+Training clarification: user confirmed 'за 2 дня'. Add one training_2day reminder at start minus 48 hours for every training subscriber, even after yes/no. It merges with changes, weekly/day/daily notices where coincident. Preserve weekly invitations, daily unanswered followups and mandatory 24-hour reminder; games do not get this extra notice. Monday 19:30 -> Saturday 19:30 MSK; Thursday 19:30 -> Tuesday 19:30. Main update still without tests or local sources.

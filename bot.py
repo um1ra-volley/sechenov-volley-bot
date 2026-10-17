@@ -380,7 +380,7 @@ def make_notice(state, event, uid, kinds, title, now, due=None, old=None, follow
     source=state["sourceState"].get(event["sourceKey"],{})
     if source.get("lastError"):
         text+="\n⚠️ Источник недоступен. Последняя проверка: "+source.get("lastSuccessAt","не завершена")
-    kind="change" if "change" in kinds else "day" if "day" in kinds else "followup" if "followup" in kinds else "poll"
+    kind="change" if "change" in kinds else "day" if "day" in kinds else "training_2day" if "training_2day" in kinds else "followup" if "followup" in kinds else "poll"
     message={"chatId":state["users"][uid]["privateChatId"],"text":text}
     if upcoming(event,now):
         message["buttons"]=attendance_buttons(event)
@@ -418,6 +418,8 @@ def plan_notifications(state, now):
             kinds=["change"]; distance=event_instant(e)-clock
             if upcoming(e,now) and distance<=timedelta(days=7) and not has_notice(state,e,uid,"poll"):
                 kinds.append("poll")
+            if e["kind"]=="training" and upcoming(e,now) and distance<=timedelta(days=2) and not has_notice(state,e,uid,"training_2day"):
+                kinds.append("training_2day")
             if upcoming(e,now) and distance<=timedelta(days=1) and not has_notice(state,e,uid,"day"):
                 kinds.append("day")
             title={"cancelled":"❌ Событие отменено.","removed":"Событие снято из расписания."}.get(e["status"],"🔄 Расписание изменилось." if old else "Добавлено событие.")
@@ -436,14 +438,16 @@ def plan_notifications(state, now):
             kinds=[]
             if clock>=start-timedelta(days=7) and not has_notice(state,e,uid,"poll"):
                 kinds.append("poll")
+            if e["kind"]=="training" and clock>=start-timedelta(days=2) and not has_notice(state,e,uid,"training_2day"):
+                kinds.append("training_2day")
             if clock>=start-timedelta(days=1) and not has_notice(state,e,uid,"day"):
                 kinds.append("day")
             if (not p.get("answer") or p.get("attendanceRevision")!=e["attendanceRevision"]) and last_prompt and clock>=instant(last_prompt)+timedelta(days=1) and not waiting_prompt(state,e,uid):
                 kinds.append("followup")
             if not kinds:
                 continue
-            title="⏰ Напоминание о ближайшем событии" if "day" in kinds else "Вы ещё не ответили. Будете?" if "followup" in kinds else "Будете участвовать?"
-            due=start-timedelta(days=1) if "day" in kinds else instant(last_prompt)+timedelta(days=1) if "followup" in kinds else start-timedelta(days=7)
+            title="⏰ Напоминание о ближайшем событии" if "day" in kinds else "🏐 Напоминание о тренировке" if "training_2day" in kinds else "Вы ещё не ответили. Будете?" if "followup" in kinds else "Будете участвовать?"
+            due=start-timedelta(days=1) if "day" in kinds else start-timedelta(days=2) if "training_2day" in kinds else instant(last_prompt)+timedelta(days=1) if "followup" in kinds else start-timedelta(days=7)
             make_notice(state,e,uid,kinds,title,now,iso(due),followup_after=last_prompt if "followup" in kinds else None)
 
 def archive_state(state, now):
