@@ -1,0 +1,23 @@
+name: GitHub storage smoke
+on:
+  push:
+    branches: [codex/implement-bot]
+    paths: ['scripts/github-smoke.mjs', 'scripts/node-git-http.mjs', 'scripts/smoke-worker.mjs', 'src/adapters/github/repository.ts', '.github/workflows/github-smoke.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  transaction:
+    permissions: {contents: write}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with: {node-version: '24'}
+      - run: npm ci --no-audit --no-fund
+      - name: Exercise real private GitHub transactions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SMOKE_BRANCH: codex/smoke-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/github-smoke.mjs
