@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 MSK = ZoneInfo("Europe/Moscow")
 UTC = timezone.utc
 LABELS = {"MSSI":"МССИ", "LVL":"ЛВЛ", "CHM":"ЧМ", "LCHB":"ЛЧБ", "TRAINING":"Тренировки"}
+LEAGUES = ("MSSI","LVL","CHM","LCHB")
 SECTIONS = {
     "state/users.json":"users", "state/subscriptions.json":"subscriptions",
     "state/events.json":"events", "state/participation.json":"participation",
@@ -146,10 +147,14 @@ def normalize_chm(text, season):
     if last!=first+1:
         raise ValueError("Invalid season")
     rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff")),strict=True))
-    if not any(len(row)>=19 and row[0].strip().isdigit() for row in rows):
-        raise ValueError("Championship table structure changed")
+    headers=[i for i,row in enumerate(rows) if len(row)>=19
+        and normalized(row[0])=="№ игры" and normalized(row[4])=="дата"
+        and normalized(row[8])=="команда №1" and normalized(row[18])=="команда №2"]
+    if len(headers)!=1:
+        raise ValueError("Championship schedule header changed")
     found, seen = [], set()
-    for raw in rows:
+    # The numeric team standings above the schedule are not game rows.
+    for raw in rows[headers[0]+1:]:
         row = [clean(raw[i] if i<len(raw) else "") for i in range(19)]
         home, away = row[8], row[18]
         # A truncated game row can hide our away team; reject the snapshot before filtering.
@@ -491,7 +496,7 @@ def archive_state(state, now):
     return writes
 
 def menu_markup(role="member"):
-    rows=[["📅 Игры на неделю","🗓 Игры в этом месяце"],["🏐 Тренировки","⚙️ Подписки"],["👤 Моё ФИО"]]
+    rows=[["📅 Игры на неделю","🗓 Игры в этом месяце"],["📆 Игры на следующей неделе"],["🏐 Тренировки","⚙️ Подписки"],["👤 Моё ФИО"]]
     if role in ("owner","admin"):
         rows += [["📊 Статистика"],["⚙️ Состояние","🛠 Тренировки"]]
     if role=="owner":
@@ -528,13 +533,18 @@ def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, even
 
 def subscription_dialog(state, uid, now):
     chosen=state["subscriptions"].get(uid,[])
-    buttons=[[{"text":("✅ " if scope in chosen else "▫️ ")+label,"data":"s|"+scope}] for scope,label in LABELS.items()]
-    buttons.append([{"text":"Готово","data":"done"}])
-    queue_dialog(state,uid,"Какие лиги и тренировки вы хотите отслеживать?",now,buttons)
+    all_selected=all(scope in chosen for scope in LEAGUES)
+    prefix="✅ " if all_selected else "◐ " if any(scope in chosen for scope in LEAGUES) else "▫️ "
+    buttons=[[{"text":prefix+"Все лиги","data":"s|ALL"}],
+        [{"text":("✅ " if "TRAINING" in chosen else "▫️ ")+"Тренировки","data":"s|TRAINING"}],
+        [{"text":"Готово","data":"done"}]]
+    queue_dialog(state,uid,"«Все лиги» — МССИ, ЛВЛ, ЧМ и ЛЧБ одним нажатием. Тренировки включаются отдельно.",now,buttons)
 
 def show_events(state, uid, now, period):
     today=instant(now).astimezone(MSK).date()
     end=today+timedelta(days=6-today.weekday())
+    next_start=end+timedelta(days=1)
+    next_end=next_start+timedelta(days=6)
     found=[]
     for e in state["events"].values():
         day=date.fromisoformat(e["localDate"])
@@ -546,12 +556,15 @@ def show_events(state, uid, now, period):
             include=False
         elif period=="week":
             include=today<=day<=end and upcoming(e,now)
+        elif period=="nextweek":
+            include=next_start<=day<=next_end and upcoming(e,now)
         else:
             include=day.year==today.year and day.month==today.month
         if include:
             found.append(e)
     if not found:
-        queue_dialog(state,uid,"В выбранном периоде событий по вашим подпискам нет.",now,menu=True)
+        text="На следующей неделе игр по вашим подпискам нет." if period=="nextweek" else "В выбранном периоде событий по вашим подпискам нет."
+        queue_dialog(state,uid,text,now,menu=True)
     for e in sorted(found,key=lambda e:(e["localDate"],e.get("startAtUtc") or "",e["eventId"])):
         text=event_card(e,now)
         source=state["sourceState"].get(e["sourceKey"],{})
@@ -710,10 +723,19 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     if data and (data.startswith("s|") or data=="done"):
         if data.startswith("s|"):
             scope=data[2:]
-            if scope not in LABELS:
-                return
             selected=state["subscriptions"].setdefault(uid,[])
-            selected.remove(scope) if scope in selected else selected.append(scope)
+            if scope=="ALL":
+                if all(league in selected for league in LEAGUES):
+                    selected[:]=[value for value in selected if value not in LEAGUES]
+                else:
+                    selected[:]=list(dict.fromkeys([*selected,*LEAGUES]))
+            elif scope=="TRAINING":
+                selected.remove(scope) if scope in selected else selected.append(scope)
+            elif scope in LEAGUES:
+                # Old individual-league buttons only refresh the new grouped selector.
+                subscription_dialog(state,uid,now);return
+            else:
+                return
             audit(state,"SUBSCRIPTIONS_SET",now,uid,target=uid,next_value=selected)
             subscription_dialog(state,uid,now)
         else:
@@ -735,6 +757,8 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         say("Ответ сохранён: "+("буду." if parts[3]=="y" else "не буду."),menu=True);return
     if text in ("/week","📅 Игры на неделю"):
         show_events(state,uid,now,"week");return
+    if text in ("/nextweek","📆 Игры на следующей неделе"):
+        show_events(state,uid,now,"nextweek");return
     if text in ("/month","🗓 Игры в этом месяце"):
         show_events(state,uid,now,"month");return
     if text in ("/trainings","🏐 Тренировки"):
@@ -1077,8 +1101,11 @@ class SheetSource:
                     raise ValueError("CSV unavailable")
                 found=normalize_chm(reply.body,config.get("season","2026/2027")) if scope=="CHM" else normalize_own(reply.body,scope)
                 return {"sourceId":scope,"ok":True,"events":found}
-            except (ApiError,ValueError,csv.Error,UnicodeError,KeyError):
-                return {"sourceId":scope,"ok":False,"events":[],"error":"Не удалось прочитать расписание "+LABELS.get(scope,scope)}
+            except ApiError as exc:
+                detail=f"HTTP {exc.status}" if exc.status else "ошибка сети"
+                return {"sourceId":scope,"ok":False,"events":[],"error":"Источник "+LABELS.get(scope,scope)+" недоступен ("+detail+")"}
+            except (ValueError,csv.Error,UnicodeError,KeyError):
+                return {"sourceId":scope,"ok":False,"events":[],"error":"Ошибка формата расписания "+LABELS.get(scope,scope)+": проверьте структуру, даты и время в таблице"}
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             return list(pool.map(one,self.sources))
 
