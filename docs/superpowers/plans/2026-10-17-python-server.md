@@ -15,3 +15,6 @@ Global constraints: private um1ra-volley/sechenov-volley-bot, branch codex/pytho
 Sources: owned spreadsheet 1qoniSvNsRrRpxPycM8vqMcZq7gvO7lcGLYdjrEz0L3k, gids MSSI 829855182 / LVL 11476290 / LCHB 543095078, header row 5. CHM spreadsheet 1WKhrg8yCAgbkB1bBg7XPv78H1z772IesmB8aKJYBh_Q, gid 2047287896, season 2026/2027, exact Сеченовский университет filter. CSV exports currently readable without credentials; failures freeze the last snapshot, never change sharing permissions.
 
 Review focus: two concurrent replies and failed CAS; crash after Telegram accepts a message; offset advancement after durable commit; subscription/version changes between enqueue and send; malformed/empty CSV vs actual removed row; old runtime waking after takeover; updater rollback without resetting GitHub data.
+
+## User correction during implementation
+Use a reviewed ready Telegram framework (aiogram 3.31.0). Stop tests and CI runs. Deliver Python code, Docker/server instructions and an independent static review. Earlier test artifacts are not a claim that the final server runtime has been run.
