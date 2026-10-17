@@ -1,3 +1,4 @@
+import { moscowInstant, validateDate } from '../core/time.ts';
 import { planNotifications, canDeliver } from '../core/reminders.ts';
 import { synchronize } from '../core/schedule.ts';
 import type { SourceSnapshot } from '../core/model.ts';
@@ -30,7 +31,29 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
   const user=requireUser(state,actor),name=text(data,'fullName').trim().replace(/\s+/g,' ');
   if(name.length<2||name.length>120||!/[\p{L}]/u.test(name))throw new Error('Введите ФИО, от 2 до 120 символов');
   previous=user.fullName;user.fullName=name;next=name;
-  if(user.stage==='name')user.stage='subscriptions';
+  if(user.stage==='name'){user.stage=user.editName?'ready':'subscriptions';delete user.editName;}
+  break;
+ }
+ case 'ASK_NAME':{
+  const user=requireUser(state,actor);user.editName=Boolean(user.fullName);user.stage='name';delete user.pendingAction;break;
+ }
+ case 'CANCEL_DIALOG':{const user=requireUser(state,actor);user.stage=user.fullName?'ready':'name';delete user.pendingAction;delete user.editName;break;}
+ case 'BEGIN_TRAINING_MOVE':{
+  const user=owner(state,actor),event=state.events[text(data,'eventId')];if(!event||event.kind!=='training')throw new Error('Нужна тренировка');
+  user.pendingAction={kind:'move-training',eventId:event.eventId};break;
+ }
+ case 'TRAINING_EXCEPTION':{
+  const user=owner(state,actor),event=state.events[text(data,'eventId')];if(!event||event.kind!=='training')throw new Error('Нужна тренировка');
+  previous=JSON.parse(JSON.stringify(event));targetId=event.eventId;
+  if(data.action==='cancel')event.status='cancelled';
+  else if(data.action==='restore'){event.status='scheduled';event.attendanceRevision++;}
+  else if(data.action==='move'){
+   const date=validateDate(text(data,'localDate')),instant=text(data,'startAtUtc');
+   if(!Number.isFinite(Date.parse(instant))||Date.parse(instant)<=Date.parse(now)||instant.slice(0,10)!==date)throw new Error('Некорректная будущая дата');
+   event.localDate=date;event.startAtUtc=instant;event.status='postponed';event.attendanceRevision++;
+  }else throw new Error('Некорректная команда тренировки');
+  event.revision++;next=JSON.parse(JSON.stringify(event));delete user.pendingAction;
+  state.operations.push({operationId:command.operationId+':event',action:'EVENT_CHANGED',targetId:event.eventId,at:now,result:'ok',previous,next});
   break;
  }
  case 'SET_SCOPE':{
@@ -109,7 +132,8 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
  const effects=command.effects??[];
  for(let index=0;index<effects.length;index++){
   const effect=effects[index],id=command.operationId+':ui:'+index;
-  state.notifications[id]={notificationId:id,userId:effect.userId??effect.chatId,type:'ui',dueAt:now,status:'pending',attempts:0,message:{chatId:effect.chatId,text:effect.text,buttons:effect.buttons,messageId:effect.kind==='edit'?effect.messageId:undefined}};
+  if(effect.purpose!=='admin')for(const old of Object.values(state.notifications))if(old.userId===(effect.userId??effect.chatId)&&old.type==='ui'&&['pending','retry'].includes(old.status))old.status='cancelled';
+  state.notifications[id]={notificationId:id,userId:effect.userId??effect.chatId,type:effect.purpose==='admin'?'admin':'ui',dueAt:now,status:'pending',attempts:0,message:{chatId:effect.chatId,text:effect.text,buttons:effect.buttons,messageId:effect.kind==='edit'?effect.messageId:undefined}};
  }
  if(command.updateId)state.processedUpdates[command.updateId]=now;
  state.stateVersion++;

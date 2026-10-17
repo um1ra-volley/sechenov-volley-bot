@@ -6,7 +6,7 @@ export interface Runtime { id:string; epoch:number; paused:boolean }
 export interface User {
   telegramUserId:string; privateChatId:string; fullName:string; role:'owner'|'member';
   accessStatus:'pending'|'approved'|'rejected'; stage:'name'|'subscriptions'|'ready';
-  registeredAt:string; deliveryStatus:'active'|'blocked';
+  registeredAt:string; deliveryStatus:'active'|'blocked'; editName?:boolean; pendingAction?:{kind:'move-training';eventId:string};
 }
 export interface Event {
   eventId:string; sourceKey:string; scope:Scope; kind:'game'|'training'; team:string;
@@ -20,7 +20,7 @@ export interface Participation {
 }
 export interface Button { text:string; data:string }
 export interface Message { chatId:string; text:string; buttons?:Button[][]; messageId?:string }
-export interface Effect extends Message { kind:'send'|'edit'; userId?:string }
+export interface Effect extends Message { kind:'send'|'edit'; userId?:string; purpose?:'dialog'|'admin' }
 export interface Notification {
   notificationId:string; eventId?:string; userId:string; scope?:Scope; revision?:number;
   attendanceRevision?:number; type:string; dueAt:string; status:'pending'|'sending'|'sent'|'retry'|'uncertain'|'cancelled';

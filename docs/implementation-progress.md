@@ -36,3 +36,5 @@ Task 4 regression RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs
 
 Task 4: complete (commits c90a47f..045fb5d; npm test 51/51, typecheck passed; regression RED→GREEN; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39036695031).
 Task 5: in progress; BASE 045fb5d2bdaf7f5c763c14ff75142e933a877296.
+
+Task 5 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39036935570 — 51 passed, 18 failed because Telegram handler was absent.

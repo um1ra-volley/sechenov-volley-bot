@@ -2,7 +2,7 @@ import type {Clock,StateRepository,TelegramTransport,SourceSnapshot} from '../co
 import {canDeliver} from '../core/reminders.ts';
 import {generateTrainings} from '../core/training.ts';
 import {TelegramError} from '../adapters/telegram/transport.ts';
-export function deliverDue(repository:StateRepository,transport:TelegramTransport,now:string,limit:number):{sent:number;failed:number}{
+export function deliverDue(repository:StateRepository,transport:TelegramTransport,now:string,limit:number,targetUsers?:string[]):{sent:number;failed:number}{
  const report={sent:0,failed:0};
  let initial=repository.read();if(initial.runtime.paused)return report;
  const expected={id:initial.runtime.id,epoch:initial.runtime.epoch};
@@ -11,7 +11,7 @@ export function deliverDue(repository:StateRepository,transport:TelegramTranspor
    repository.transact({type:'DELIVERY_RECOVER',operationId:'recover:'+n.notificationId+':'+n.sendingAt,data:{notificationId:n.notificationId}},expected);
  }
  initial=repository.read();
- const ready=Object.values(initial.notifications).filter(n=>['pending','retry'].includes(n.status)&&Date.parse(n.nextAttemptAt??n.dueAt)<=Date.parse(now)).sort((a,b)=>a.dueAt.localeCompare(b.dueAt)).slice(0,limit);
+ const ready=Object.values(initial.notifications).filter(n=>(!targetUsers||targetUsers.includes(n.userId))&&['pending','retry'].includes(n.status)&&Date.parse(n.nextAttemptAt??n.dueAt)<=Date.parse(now)).sort((a,b)=>(a.type==='ui'?-1:0)-(b.type==='ui'?-1:0)||a.dueAt.localeCompare(b.dueAt)).slice(0,limit);
  for(const candidate of ready){
   const lease='claim:'+candidate.notificationId+':'+now;
   let claimed;
