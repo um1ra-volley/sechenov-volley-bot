@@ -535,7 +535,7 @@ def subscription_dialog(state, uid, now):
     chosen=state["subscriptions"].get(uid,[])
     all_selected=all(scope in chosen for scope in LEAGUES)
     prefix="✅ " if all_selected else "◐ " if any(scope in chosen for scope in LEAGUES) else "▫️ "
-    buttons=[[{"text":prefix+"Все лиги","data":"s|ALL"}],
+    buttons=[[{"text":prefix+"Все лиги","data":"s|ALL|"+("0" if all_selected else "1")}],
         [{"text":("✅ " if "TRAINING" in chosen else "▫️ ")+"Тренировки","data":"s|TRAINING"}],
         [{"text":"Готово","data":"done"}]]
     queue_dialog(state,uid,"«Все лиги» — МССИ, ЛВЛ, ЧМ и ЛЧБ одним нажатием. Тренировки включаются отдельно.",now,buttons)
@@ -722,14 +722,20 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         subscription_dialog(state,uid,now);return
     if data and (data.startswith("s|") or data=="done"):
         if data.startswith("s|"):
-            scope=data[2:]
+            parts=data.split("|")
+            if len(parts) not in (2,3):
+                return
+            scope=parts[1]
             selected=state["subscriptions"].setdefault(uid,[])
             if scope=="ALL":
-                if all(league in selected for league in LEAGUES):
+                if len(parts)!=3 or parts[2] not in ("0","1"):
+                    subscription_dialog(state,uid,now);return
+                # Set the state shown by this button; stale unchecked buttons cannot unsubscribe everyone.
+                if parts[2]=="0":
                     selected[:]=[value for value in selected if value not in LEAGUES]
                 else:
                     selected[:]=list(dict.fromkeys([*selected,*LEAGUES]))
-            elif scope=="TRAINING":
+            elif scope=="TRAINING" and len(parts)==2:
                 selected.remove(scope) if scope in selected else selected.append(scope)
             elif scope in LEAGUES:
                 # Old individual-league buttons only refresh the new grouped selector.
@@ -1098,7 +1104,7 @@ class SheetSource:
                 url="https://docs.google.com/spreadsheets/d/"+config["book"]+"/export?format=csv&gid="+str(config["gid"])
                 reply=self.http.request("GET",url,timeout=20)
                 if reply.status!=200:
-                    raise ValueError("CSV unavailable")
+                    raise ApiError(reply.status)
                 found=normalize_chm(reply.body,config.get("season","2026/2027")) if scope=="CHM" else normalize_own(reply.body,scope)
                 return {"sourceId":scope,"ok":True,"events":found}
             except ApiError as exc:
