@@ -29,3 +29,5 @@ Ruling: keep user instruction against tests/local files; static syntax/read-thro
 Privacy: found repository public during read, restored the previously requested private visibility and verified dmitriyg0r retained repository admin access.
 
 Role changes increment roleRevision to reject stale/duplicate/ABA buttons. Staff outbox replies carry requiredRole and are rechecked at delivery; revocation cancels legacy queued staff dialogs and clears pending training actions. Admin access cannot be withdrawn through an old approval callback.
+
+Final role review: independent static reviewer found no consequential Critical/Important/Minor findings; Declined-to-judge []. Own final read found historical source health operations could be sent to a newly promoted admin; fixed by recording adminSince and filtering source incidents before that grant. No tests, imports, bot or Docker executed. Syntax inspection and GitHub readback only. Review details: docs/admins-review.md.

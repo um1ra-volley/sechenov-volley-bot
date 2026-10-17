@@ -356,7 +356,7 @@ def plan_notifications(state, now):
             changes[op["targetId"]]=op
         if op["action"] in ("SOURCE_ERROR","SOURCE_RESTORED"):
             for uid,u in state["users"].items():
-                if is_admin(u):
+                if is_admin(u) and (not u.get("adminSince") or instant(op["at"])>=instant(u["adminSince"])):
                     key="health:"+op["operationId"]+":"+uid
                     if key not in state["notifications"]:
                         queue_dialog(state,uid,("⚠️ Ошибка источника " if op["action"]=="SOURCE_ERROR" else "✅ Источник восстановлен ")+op["targetId"],now,key=key)
@@ -552,6 +552,8 @@ def set_admin_role(state, actor, target_id, expected, role, now):
         or target["accessStatus"]!="approved" or not target["fullName"]):
         return False
     old=target["role"]; target.update(role=role,roleRevision=target.get("roleRevision",0)+1)
+    if role=="admin":
+        target["adminSince"]=now
     target.pop("pendingAction",None)
     audit(state,"ROLE_SET",now,actor,target=target_id,previous=old,next_value=role)
     if role=="member":
