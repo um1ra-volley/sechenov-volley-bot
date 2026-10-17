@@ -274,6 +274,12 @@ def subscribed(state, uid, scope):
     u=state["users"].get(uid,{})
     return u.get("accessStatus")=="approved" and scope in state["subscriptions"].get(uid,[])
 
+def is_owner(user):
+    return user.get("role")=="owner" and user.get("accessStatus")=="approved"
+
+def is_admin(user):
+    return user.get("role") in ("owner","admin") and user.get("accessStatus")=="approved"
+
 def event_stats(state, eid):
     event=state["events"][eid]
     result={k:[] for k in ("yes","no","unanswered","reconfirm")}
@@ -290,6 +296,9 @@ def event_stats(state, eid):
 def can_deliver(state, notice, now):
     uid=notice["userId"]; user=state["users"].get(uid)
     if not user or user.get("deliveryStatus")=="blocked":
+        return False
+    required=notice.get("requiredRole")
+    if required and not (is_owner(user) if required=="owner" else is_admin(user) if required=="admin" else False):
         return False
     eid=notice.get("eventId")
     if not eid:
@@ -347,7 +356,7 @@ def plan_notifications(state, now):
             changes[op["targetId"]]=op
         if op["action"] in ("SOURCE_ERROR","SOURCE_RESTORED"):
             for uid,u in state["users"].items():
-                if u["role"]=="owner" and u["accessStatus"]=="approved":
+                if is_admin(u):
                     key="health:"+op["operationId"]+":"+uid
                     if key not in state["notifications"]:
                         queue_dialog(state,uid,("⚠️ Ошибка источника " if op["action"]=="SOURCE_ERROR" else "✅ Источник восстановлен ")+op["targetId"],now,key=key)
@@ -431,13 +440,18 @@ def archive_state(state, now):
     state["lastArchiveAt"]=now
     return writes
 
-def menu_markup(owner=False):
+def menu_markup(role="member"):
     rows=[["📅 Игры на неделю","🗓 Игры в этом месяце"],["🏐 Тренировки","⚙️ Подписки"],["👤 Моё ФИО"]]
-    if owner:
+    if role in ("owner","admin"):
         rows += [["📊 Статистика","👥 Заявки"],["⚙️ Состояние","🛠 Тренировки"]]
+    if role=="owner":
+        rows += [["👑 Администраторы"]]
     return {"keyboard":[[{"text":text} for text in row] for row in rows],"resize_keyboard":True}
 
-def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, event=None):
+def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, event=None, required_role=None):
+    user=state["users"][uid]
+    if required_role is None and is_admin(user):
+        required_role="admin"
     prefix=key or f"ui:{state.get('_updateId','job')}:{uid}:"
     parts=[]; part=""; units=0
     for char in text:
@@ -453,9 +467,11 @@ def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, even
             if buttons:
                 message["buttons"]=buttons
             if menu:
-                message["replyMarkup"]=menu_markup(state["users"][uid]["role"]=="owner")
+                message["replyMarkup"]=menu_markup(user["role"] if user["accessStatus"]=="approved" else "member")
         state["notifications"][nid]=dict(notificationId=nid,userId=uid,type="ui",fulfills=["ui"],dueAt=now,
             status="pending",attempts=0,message=message)
+        if required_role:
+            state["notifications"][nid]["requiredRole"]=required_role
         if event is not None:
             state["notifications"][nid].update(eventId=event["eventId"],revision=event["revision"],
                 attendanceRevision=event["attendanceRevision"])
@@ -494,6 +510,8 @@ def show_events(state, uid, now, period):
         queue_dialog(state,uid,text,now,attendance_buttons(e) if upcoming(e,now) else None,menu=True,event=e)
 
 def show_stats(state, uid, eid, now):
+    if not is_admin(state["users"].get(uid,{})):
+        queue_dialog(state,uid,"Статистика доступна администраторам.",now); return
     if eid not in state["events"]:
         queue_dialog(state,uid,"Событие не найдено.",now); return
     stats=event_stats(state,eid)
@@ -504,7 +522,50 @@ def show_stats(state, uid, eid, now):
     buttons=[[{"text":"Отметить участника","data":f"marklist|{eid}|{revision}"}],[{"text":"История ответов","data":"history|"+eid}]]
     queue_dialog(state,uid,text,now,buttons)
 
+def show_admins(state, uid, now):
+    if not is_owner(state["users"].get(uid,{})):
+        queue_dialog(state,uid,"Назначать администраторов может только владелец.",now); return
+    staff=sorted((u for u in state["users"].values() if is_admin(u)),
+        key=lambda u:(u["role"]!="owner",u["fullName"].casefold(),u["telegramUserId"]))
+    text="Администраторы:\n"+("\n".join(
+        ("👑 Владелец: " if u["role"]=="owner" else "🛠 Админ: ")+(u["fullName"] or "ФИО не указано")+" · ID "+u["telegramUserId"]
+        for u in staff) or "—")
+    candidates=sorted((u for u in state["users"].values()
+        if u["role"] in ("member","admin") and u["accessStatus"]=="approved" and u["fullName"]),
+        key=lambda u:(u["role"]!="admin",u["fullName"].casefold(),u["telegramUserId"]))
+    buttons=[]
+    for target in candidates:
+        remove=target["role"]=="admin"
+        action="member" if remove else "admin"
+        label=("Снять: " if remove else "Назначить: ")+target["fullName"]+" · "+target["telegramUserId"]
+        buttons.append([{"text":label,"data":f"ar|{target['telegramUserId']}|{target.get('roleRevision',0)}|{action}"}])
+    if not candidates:
+        text+="\n\nДля назначения участник должен пройти /start, указать ФИО и получить одобрение в «Заявках»."
+    queue_dialog(state,uid,text,now,buttons,menu=True,required_role="owner")
+
+def set_admin_role(state, actor, target_id, expected, role, now):
+    if not is_owner(state["users"].get(actor,{})):
+        return False
+    target=state["users"].get(target_id)
+    if (not target or target_id==actor or target["role"] not in ("member","admin")
+        or str(target.get("roleRevision",0))!=expected or role not in ("member","admin") or role==target["role"]
+        or target["accessStatus"]!="approved" or not target["fullName"]):
+        return False
+    old=target["role"]; target.update(role=role,roleRevision=target.get("roleRevision",0)+1)
+    target.pop("pendingAction",None)
+    audit(state,"ROLE_SET",now,actor,target=target_id,previous=old,next_value=role)
+    if role=="member":
+        # Cancel legacy staff dialogs too, including messages queued before this upgrade.
+        for n in state["notifications"].values():
+            if n["userId"]==target_id and n["type"]=="ui":
+                n.setdefault("requiredRole","admin")
+                if n["status"] in ("pending","retry"):
+                    n["status"]="cancelled"
+    return True
+
 def save_answer(state, eid, target, answer, actor, now, source, expected_revision=None):
+    if source=="admin" and not is_admin(state["users"].get(actor,{})):
+        return False
     e=state["events"].get(eid)
     if not e or answer not in ("yes","no") or not subscribed(state,target,e["scope"]) or (expected_revision is not None and str(e["attendanceRevision"])!=str(expected_revision)):
         return False
@@ -516,6 +577,8 @@ def save_answer(state, eid, target, answer, actor, now, source, expected_revisio
     return True
 
 def change_training(state, eid, action, now, actor, moved=None):
+    if not is_admin(state["users"].get(actor,{})):
+        raise ValueError("Управление тренировками доступно администраторам")
     old=state["events"].get(eid)
     if not old or old["kind"]!="training":
         raise ValueError("Тренировка не найдена")
@@ -601,11 +664,11 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         else:
             u["stage"]="ready"
             if u["accessStatus"]=="pending":
-                say("Подписки сохранены. Заявка отправлена владельцу.",menu=True)
+                say("Подписки сохранены. Заявка отправлена администраторам.",menu=True)
                 if not u.get("requestSentAt"):
                     u["requestSentAt"]=now
                     for owner_id,owner in state["users"].items():
-                        if owner["role"]=="owner" and owner["accessStatus"]=="approved":
+                        if is_admin(owner):
                             queue_dialog(state,owner_id,"Заявка на доступ: "+u["fullName"],now,
                                 [[{"text":"Одобрить","data":"approve|"+uid+"|y"},{"text":"Отклонить","data":"approve|"+uid+"|n"}]])
             else:
@@ -616,7 +679,7 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     if text in ("/name","👤 Моё ФИО"):
         u["editName"]=True; say("Пришлите новое ФИО."); return
     if u["accessStatus"]!="approved":
-        say("Ожидается подтверждение владельца." if u["accessStatus"]=="pending" else "Заявка отклонена владельцем."); return
+        say("Ожидается подтверждение администратора." if u["accessStatus"]=="pending" else "Заявка отклонена администратором."); return
     if data and data.startswith("r|"):
         parts=data.split("|")
         e=state["events"].get(parts[1]) if len(parts)==4 else None
@@ -630,7 +693,22 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         show_events(state,uid,now,"month");return
     if text in ("/trainings","🏐 Тренировки"):
         show_events(state,uid,now,"training");return
-    if u["role"]!="owner":
+    if text in ("/admins","👑 Администраторы") or (data and data.startswith("ar|")):
+        if not is_owner(u):
+            say("Назначать администраторов может только владелец.");return
+        if text in ("/admins","👑 Администраторы"):
+            show_admins(state,uid,now);return
+        parts=data.split("|")
+        if len(parts)!=4 or not set_admin_role(state,uid,parts[1],parts[2],parts[3],now):
+            say("Список устарел или участник ещё не одобрен. Откройте «Администраторы» заново.");return
+        promoted=parts[3]=="admin"
+        target=state["users"][parts[1]]
+        queue_dialog(state,parts[1],
+            "Вы назначены администратором. Доступны статистика, заявки, ручные отметки и управление тренировками."
+            if promoted else "Права администратора сняты. Ваши подписки и ответы сохранены.",now,menu=True)
+        say(target["fullName"]+": "+("назначен администратором." if promoted else "права администратора сняты."))
+        show_admins(state,uid,now);return
+    if not is_admin(u):
         say("Выберите действие.",menu=True);return
     pending=u.get("pendingAction")
     if pending and pending["kind"]=="move-training" and text and not text.startswith("/"):
@@ -657,12 +735,12 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     if data and data.startswith("approve|"):
         parts=data.split("|")
         target=state["users"].get(parts[1]) if len(parts)==3 else None
-        if not target or target["role"]=="owner" or parts[2] not in ("y","n"):
+        if not target or target["role"]!="member" or parts[2] not in ("y","n"):
             return
         target["accessStatus"]="approved" if parts[2]=="y" else "rejected"
         audit(state,"ACCESS_SET",now,uid,target=parts[1],next_value=target["accessStatus"])
         say(target["fullName"]+": "+("доступ открыт." if parts[2]=="y" else "заявка отклонена."))
-        queue_dialog(state,parts[1],"Доступ подтверждён. Выберите действие." if parts[2]=="y" else "Заявка отклонена владельцем.",now,menu=parts[2]=="y")
+        queue_dialog(state,parts[1],"Доступ подтверждён. Выберите действие." if parts[2]=="y" else "Заявка отклонена администратором.",now,menu=parts[2]=="y")
         return
     if text in ("/stats","📊 Статистика","🛠 Тренировки"):
         training=text=="🛠 Тренировки"
@@ -840,8 +918,10 @@ class GitHubRepository:
             if not isinstance(state.get(key),expected):
                 raise ValueError("Invalid state section: "+key)
         for uid,u in state["users"].items():
-            if not isinstance(u,dict) or u.get("telegramUserId")!=uid or u.get("role") not in ("owner","member") or u.get("accessStatus") not in ("pending","approved","rejected"):
+            if not isinstance(u,dict) or u.get("telegramUserId")!=uid or u.get("role") not in ("owner","admin","member") or u.get("accessStatus") not in ("pending","approved","rejected"):
                 raise ValueError("Invalid user state")
+            if type(u.get("roleRevision",0)) is not int or u.get("roleRevision",0)<0:
+                raise ValueError("Invalid role revision")
         for scopes in state["subscriptions"].values():
             if not isinstance(scopes,list) or any(scope not in LABELS for scope in scopes):
                 raise ValueError("Invalid subscription state")

@@ -22,3 +22,10 @@ Task 5: completed one independent static review; accepted all three Important fi
 Ruling: do not create a PR against main because the inherited pull_request workflow would run npm test. Cost: Python remains in codex/python-server until the owner chooses integration; server instructions explicitly use that branch.
 
 Integration: the owner explicitly requested main. Server instructions, systemd CODE_BRANCH and updater default now use main; the data branch remains codex/bot-data. Publish with [skip ci] to honour the no-tests instruction. Keep both feature branches and their history. No local source files or server deployment.
+
+Admins change (17 October 2026): owner explicitly requested multiple bot admins in main. Bounded extension of existing roles: owner alone assigns/removes admin through /admins; approved admins share statistics, participation edits, approval, trainings and operational commands. Existing owner/member records preserved; no live user roles changed during development.
+Ruling: no shared admin password — owner chooses an approved Telegram ID from the existing registered-user list. Cost if wrong: the first owner must be available to delegate access.
+Ruling: keep user instruction against tests/local files; static syntax/read-through only, publish directly to main with [skip ci] as explicitly requested.
+Privacy: found repository public during read, restored the previously requested private visibility and verified dmitriyg0r retained repository admin access.
+
+Role changes increment roleRevision to reject stale/duplicate/ABA buttons. Staff outbox replies carry requiredRole and are rechecked at delivery; revocation cancels legacy queued staff dialogs and clears pending training actions. Admin access cannot be withdrawn through an old approval callback.
