@@ -45,7 +45,7 @@ export class GitHubStateRepository {
   try{responses=this.options.http.batch?this.options.http.batch(items.map(item=>({method:'GET',url:'https://api.github.com/repos/'+this.options.repo+'/git/blobs/'+encodeURIComponent(item.sha),headers:{Authorization:'Bearer '+this.options.token,Accept:'application/vnd.github.raw+json','X-GitHub-Api-Version':'2022-11-28'}}))):items.map(item=>this.response('GET','git/blobs/'+encodeURIComponent(item.sha),undefined,true));}catch{throw new GitHubError(0);}
   if(responses.length!==paths.length)throw new GitHubError(502);
   for(let i=0;i<paths.length;i++){if(responses[i].status!==200)throw new GitHubError(responses[i].status);files[paths[i]]=responses[i].body;}
-  let manifest:{schemaVersion:1;stateVersion:number;runtime:Runtime;archives?:string[];lastArchiveAt?:string};
+  let manifest:{schemaVersion:1;stateVersion:number;runtime:Runtime;archives?:string[];lastArchiveAt?:string;archivedEvents?:State['archivedEvents']};
   try{manifest=JSON.parse(files['state/manifest.json']);}catch{throw new Error('GitHub: повреждён манифест');}
   if(manifest.schemaVersion!==1||!Number.isSafeInteger(manifest.stateVersion)||!manifest.runtime?.id||!Number.isSafeInteger(manifest.runtime.epoch))throw new Error('GitHub: неизвестный формат данных');
   const state={...manifest} as State;
@@ -64,7 +64,7 @@ export class GitHubStateRepository {
   if(existing.status===200)return this.read();
   if(existing.status!==404)throw new GitHubError(existing.status);
   const main=this.json<{object:{sha:string}}>('GET','git/ref/heads/main'),parent=this.json<{tree:{sha:string}}>('GET','git/commits/'+encodeURIComponent(main.object.sha));
-  const values:Record<string,unknown>={'state/manifest.json':{schemaVersion:state.schemaVersion,stateVersion:state.stateVersion,runtime:state.runtime,archives:state.archives,lastArchiveAt:state.lastArchiveAt}};
+  const values:Record<string,unknown>={'state/manifest.json':{schemaVersion:state.schemaVersion,stateVersion:state.stateVersion,runtime:state.runtime,archives:state.archives,lastArchiveAt:state.lastArchiveAt,archivedEvents:state.archivedEvents}};
   for(const[path,key]of Object.entries(sections))values[path]=state[key];
   const tree=this.json<{sha:string}>('POST','git/trees',{base_tree:parent.tree.sha,tree:Object.entries(values).map(([path,value])=>({path,mode:'100644',type:'blob',content:JSON.stringify(value)}))});
   const commit=this.json<{sha:string}>('POST','git/commits',{message:'bot: initialise private state',tree:tree.sha,parents:[main.object.sha]});
@@ -79,7 +79,7 @@ export class GitHubStateRepository {
    if(runtime.id!==expectedRuntime.id||runtime.epoch!==expectedRuntime.epoch||runtime.id!==this.options.runtime.id||runtime.epoch!==this.options.runtime.epoch||(runtime.paused&&command.type!=='SET_PAUSED'))throw new Error('Неактивная среда или epoch');
    const result=applyCommand(base.state,command,this.options.clock.now());
    if(result.duplicate||result.state===base.state)return result;
-   const values:Record<string,unknown>={'state/manifest.json':{schemaVersion:result.state.schemaVersion,stateVersion:result.state.stateVersion,runtime:result.state.runtime,archives:result.state.archives,lastArchiveAt:result.state.lastArchiveAt}};
+   const values:Record<string,unknown>={'state/manifest.json':{schemaVersion:result.state.schemaVersion,stateVersion:result.state.stateVersion,runtime:result.state.runtime,archives:result.state.archives,lastArchiveAt:result.state.lastArchiveAt,archivedEvents:result.state.archivedEvents}};
    for(const[path,key]of Object.entries(sections))values[path]=result.state[key];
    const changes=Object.entries(values).map(([path,value])=>({path,mode:'100644',type:'blob',content:JSON.stringify(value)})).filter(item=>item.content!==base.files[item.path]);
    for(const write of result.writes??[])changes.push({path:write.path,mode:'100644',type:'blob',content:write.content});

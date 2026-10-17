@@ -26,7 +26,8 @@ export function handleUpdate(update:unknown,dependencies:BotDependencies):{accep
  try{
   if(!user||(!callback&&/^\/start(?:\s|$)/.test(text))){
    command.type='START';command.data={chatId:id,bootstrapOwner:!callback&&text==='/start '+dependencies.ownerSetupSecret&&Boolean(dependencies.ownerSetupSecret)};
-   const recipient=user??{telegramUserId:id,privateChatId:id,fullName:'',role:'member',accessStatus:'pending',stage:'name',registeredAt:now,deliveryStatus:'active'} as User;
+   let recipient=user??{telegramUserId:id,privateChatId:id,fullName:'',role:'member',accessStatus:'pending',stage:'name',registeredAt:now,deliveryStatus:'active'} as User;
+   if(command.data.bootstrapOwner===true&&!Object.values(state.users).some(u=>u.role==='owner'))recipient={...recipient,role:'owner',accessStatus:'approved'};
    effects=[!recipient.fullName||recipient.stage==='name'?ui.message(recipient,'Введите ваше ФИО.',ui.back()):recipient.stage==='subscriptions'?ui.subscriptions(recipient,state.subscriptions[id]??[]):recipient.accessStatus==='approved'?ui.menu(recipient):ui.message(recipient,'Заявка ожидает подтверждения владельца.',[[{text:'Мои подписки',data:'subs'}]])];
   }else if(!callback&&user.pendingAction?.kind==='move-training'){
    owner();const match=text.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}:\d{2})$/);

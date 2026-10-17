@@ -1,7 +1,6 @@
 import type {Clock,StateRepository,TelegramTransport,SourceSnapshot} from '../core/model.ts';
 import {canDeliver} from '../core/reminders.ts';
 import {localDateOf} from '../core/time.ts';
-import {generateTrainings} from '../core/training.ts';
 import {TelegramError} from '../adapters/telegram/transport.ts';
 export function deliverDue(repository:StateRepository,transport:TelegramTransport,now:string,limit:number,targetUsers?:string[]):{sent:number;failed:number}{
  const report={sent:0,failed:0};
@@ -31,9 +30,9 @@ export function deliverDue(repository:StateRepository,transport:TelegramTranspor
    report.failed++;
    let status='uncertain',extra:Record<string,unknown>={error:'Неопределённый результат доставки'};
    if(error instanceof TelegramError&&!error.uncertain){
-    if(error.status===403){status='cancelled';extra={blocked:true,error:'Пользователь заблокировал бота'};}
+    if(error.status===403){status='cancelled';extra={blocked:true,terminal:true,error:'Пользователь заблокировал бота'};}
     else if((error.status===429||error.status>=500)&&n.attempts<5){status='retry';extra={nextAttemptAt:new Date(Date.parse(now)+Math.max(error.retryAfter,Math.min(3600,30*2**n.attempts))*1000).toISOString(),error:'Временная ошибка Telegram'};}
-    else{status='cancelled';extra={error:'Telegram отклонил сообщение'};}
+    else{status='cancelled';extra={terminal:true,error:'Telegram отклонил сообщение'};}
    }
    try{finish(status,extra);}catch{/* A failed receipt stays sending and will be recovered as uncertain. */}
   }
@@ -45,8 +44,7 @@ export function handleTick(dependencies:TickDependencies):{sent:number;failed:nu
  const {repository,transport,source,clock}=dependencies,now=clock.now(),state=repository.read();
  if(state.runtime.paused)return {sent:0,failed:0};
  const snapshots=source.readEvents();
- snapshots.push({sourceId:'TRAINING',ok:true,events:generateTrainings(now,8,Object.values(state.events)),observedAt:now});
- repository.transact({type:'SYNC_SOURCES',operationId:'sync:'+now,data:{snapshots}});
+ repository.transact({type:'SYNC_SOURCES',operationId:'sync:'+now,data:{snapshots,generateTrainings:true}});
  repository.transact({type:'PLAN_NOTIFICATIONS',operationId:'plan:'+now,data:{}});
  const report=deliverDue(repository,transport,clock.now(),20);
  const current=repository.read();if(!current.lastArchiveAt||localDateOf(current.lastArchiveAt)!==localDateOf(now))repository.transact({type:'ARCHIVE',operationId:'archive:'+localDateOf(now),data:{}});

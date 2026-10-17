@@ -1,3 +1,4 @@
+import { generateTrainings } from '../core/training.ts';
 import { archiveState } from '../core/archive.ts';
 import { localDateOf, validateDate } from '../core/time.ts';
 import { planNotifications, canDeliver } from '../core/reminders.ts';
@@ -26,7 +27,10 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
    const isOwner=data.bootstrapOwner===true&&!Object.values(state.users).some(u=>u.role==='owner');
    state.users[id]={telegramUserId:id,privateChatId:chatId,fullName:'',role:isOwner?'owner':'member',accessStatus:isOwner?'approved':'pending',stage:'name',registeredAt:now,deliveryStatus:'active'};
    state.subscriptions[id]=[];
-  }else state.users[id].deliveryStatus='active';
+  }else{
+   state.users[id].deliveryStatus='active';
+   if(data.bootstrapOwner===true&&!Object.values(state.users).some(u=>u.role==='owner')){state.users[id].role='owner';state.users[id].accessStatus='approved';}
+  }
   break;
  }
  case 'SET_NAME':{
@@ -116,6 +120,7 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
    if(!['sent','retry','uncertain','cancelled'].includes(String(data.status)))throw new Error('Некорректная доставка');
    notification.status=data.status as 'sent'|'retry'|'uncertain'|'cancelled';
    notification.error=typeof data.error==='string'?data.error:undefined;
+   notification.terminal=data.terminal===true;
    if(notification.status==='sent'){
     notification.messageId=text(data,'messageId');notification.sentAt=now;
     if((notification.fulfills??[notification.type]).includes('poll')&&notification.eventId){
@@ -131,7 +136,9 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
  case 'SYNC_SOURCES':{
   if(actor!==undefined)throw new Error('Нет прав доступа');
   if(!Array.isArray(data.snapshots))throw new Error('Некорректный снимок');
-  Object.assign(state,synchronize(state,data.snapshots as SourceSnapshot[],now));
+  const incoming=data.snapshots as SourceSnapshot[],snapshots=incoming.filter(s=>s.sourceId!=='TRAINING');
+  if(data.generateTrainings===true||incoming.some(s=>s.sourceId==='TRAINING'))snapshots.push({sourceId:'TRAINING',ok:true,events:generateTrainings(now,8,Object.values(state.events)),observedAt:now});
+  Object.assign(state,synchronize(state,snapshots,now));
   if(JSON.stringify(state)===JSON.stringify(input))return {state:input,effects:[],duplicate:false};
   break;
  }

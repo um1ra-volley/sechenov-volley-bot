@@ -19,11 +19,11 @@ export function canDeliver(state:State,n:Notification,now:string):boolean{
  return n.type==='change'||isUpcoming(e,now);
 }
 function has(state:State,e:Event,u:User,kind:string):boolean{
- return Object.values(state.notifications).some(n=>n.eventId===e.eventId&&n.userId===u.telegramUserId&&n.attendanceRevision===e.attendanceRevision&&n.status!=='cancelled'&&(n.fulfills??[n.type]).includes(kind));
+ return Object.values(state.notifications).some(n=>n.eventId===e.eventId&&n.userId===u.telegramUserId&&n.attendanceRevision===e.attendanceRevision&&(n.status!=='cancelled'||n.terminal===true)&&(n.fulfills??[n.type]).includes(kind));
 }
 function create(state:State,e:Event,u:User,kinds:string[],text:string,now:string,type:string,dueAt:string):void{
  const id='notice:'+e.eventId+':'+e.attendanceRevision+':'+u.telegramUserId+':'+(kinds.includes('change')?'change-'+e.revision:kinds.slice().sort().join('+'));
- if(state.notifications[id]&&state.notifications[id].status!=='cancelled')return;
+ if(state.notifications[id]&&(state.notifications[id].status!=='cancelled'||state.notifications[id].terminal===true))return;
  if(kinds.includes('poll')){
   const key=e.eventId+':'+u.telegramUserId,old=state.participation[key];
   state.participation[key]=old??{eventId:e.eventId,telegramUserId:u.telegramUserId,attendanceRevision:e.attendanceRevision,answer:null,invitedAt:now,firstPollSentAt:null,answeredAt:null,answerSource:null};
@@ -44,7 +44,7 @@ export function planNotifications(input:State,now:string):State{
   const before=old?'\nБыло: '+dateLabel(old.localDate)+(old.startAtUtc?' '+localTimeOf(old.startAtUtc):'')+' · '+(old.venue||'место не указано'):'';
   for(const u of Object.values(state.users)){
    if(u.accessStatus!=='approved'||u.deliveryStatus==='blocked'||!(state.subscriptions[u.telegramUserId]??[]).includes(e.scope))continue;
-   if(Object.values(state.notifications).some(n=>n.eventId===id&&n.userId===u.telegramUserId&&n.revision===e.revision&&n.status!=='cancelled'&&(n.fulfills??[]).includes('change')))continue;
+   if(Object.values(state.notifications).some(n=>n.eventId===id&&n.userId===u.telegramUserId&&n.revision===e.revision&&(n.status!=='cancelled'||n.terminal===true)&&(n.fulfills??[]).includes('change')))continue;
    const kinds=['change'],distance=Date.parse(eventInstant(e))-ms;
    if(isUpcoming(e,now)&&distance<=7*day&&!has(state,e,u,'poll'))kinds.push('poll');
    if(isUpcoming(e,now)&&distance<=day&&!has(state,e,u,'day'))kinds.push('day');

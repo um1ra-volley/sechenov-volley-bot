@@ -7,7 +7,7 @@ export function archiveState(input:State,now:string):{state:State;writes:{path:s
   groups[month]??={};groups[month][section]??={};groups[month][section][key]=value;
  }
  const oldIds=new Set(Object.values(state.events).filter(e=>e.localDate<cutoff&&!Object.values(state.notifications).some(n=>n.eventId===e.eventId&&['pending','retry','sending','uncertain'].includes(n.status))).map(e=>e.eventId));
- for(const id of oldIds){const e=state.events[id];move(e.localDate.slice(0,7),'events',id,e);delete state.events[id];}
+ for(const id of oldIds){const e=state.events[id];state.archivedEvents??={};state.archivedEvents[id]={revision:e.revision,attendanceRevision:e.attendanceRevision};move(e.localDate.slice(0,7),'events',id,e);delete state.events[id];}
  for(const [key,p]of Object.entries(state.participation))if(oldIds.has(p.eventId)){move(input.events[p.eventId].localDate.slice(0,7),'participation',key,p);delete state.participation[key];}
  for(const [key,n]of Object.entries(state.notifications)){
   if((n.eventId&&oldIds.has(n.eventId))||(['sent','cancelled'].includes(n.status)&&n.dueAt.slice(0,10)<cutoff)){

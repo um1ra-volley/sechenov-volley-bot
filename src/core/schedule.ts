@@ -1,3 +1,4 @@
+import {isUpcoming} from './time.ts';
 import type { Event, Operation, SourceSnapshot, State } from './model.ts';
 const fields:(keyof Event)[]=['localDate','startAtUtc','opponent','venue','status','team'];
 const attendanceFields:(keyof Event)[]=['localDate','startAtUtc','opponent','venue'];
@@ -24,7 +25,13 @@ export function synchronize(input:State,snapshots:SourceSnapshot[],now:string):S
    const old=state.events[sourceEvent.eventId];
    if(old&&old.sourceKey!==id)throw new Error('ID принадлежит другому источнику');
    missing[sourceEvent.eventId]=0;
-   if(!old){state.events[sourceEvent.eventId]=clone(sourceEvent);if(!first)record('event:'+sourceEvent.eventId+':1','EVENT_CHANGED',null,sourceEvent,sourceEvent.eventId);continue;}
+   if(!old){
+    const archived=state.archivedEvents?.[sourceEvent.eventId];
+    if(archived&&!isUpcoming(sourceEvent,now))continue;
+    const added=archived?{...sourceEvent,revision:archived.revision+1,attendanceRevision:archived.attendanceRevision+1}:clone(sourceEvent);
+    state.events[added.eventId]=added;if(archived)delete state.archivedEvents![added.eventId];
+    if(!first)record('event:'+added.eventId+':'+added.revision,'EVENT_CHANGED',null,added,added.eventId);continue;
+   }
    if(!fields.some(key=>old[key]!==sourceEvent[key]))continue;
    const reconfirm=attendanceFields.some(key=>old[key]!==sourceEvent[key])||(['removed','cancelled'].includes(old.status)&&!['removed','cancelled'].includes(sourceEvent.status));
    const updated={...sourceEvent,revision:old.revision+1,attendanceRevision:old.attendanceRevision+(reconfirm?1:0)};

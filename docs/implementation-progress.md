@@ -57,3 +57,6 @@ Task 6 deployment acceptance pending: Google OAuth, protected secret entry and a
 Final review: fresh-context read-only whole-branch review dispatched for 759afc5..da8345e, including the plan's five Review Focus cases and every Ruling.
 
 Final review: five Important findings, no Critical or retained Minor findings, Declined to judge empty. Fix pass: existing-profile owner bootstrap; concurrent training exceptions; short Google Values rows; terminal delivery retries; archived source reimport. Reproduce each before implementation.
+
+Final fix-pass RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039484255 — eight failing regressions reproduce all five findings (bootstrap, three concurrent training cases including real repository CAS replay, shortened rows, two terminal-delivery cases, archive reimport). Eligibility cancellation positive control remains green.
+Final: Ruling: archived source rows remain immutable historical snapshots; only an explicit future scheduled/postponed instance restores the same ID with increased event and attendance versions — prevents old source rows from undoing archival or reviving stale buttons — cost if wrong: corrections to already-past source rows require deliberate archive/operator handling rather than automatic historical rewrites.

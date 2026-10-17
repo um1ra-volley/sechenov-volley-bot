@@ -108,6 +108,6 @@ test('owner bootstrap promotes an existing profile once and preserves their regi
  run(d,message('1','/start synthetic-owner-once'));
  assert.equal(d.repository.state.users['1'].role,'owner');assert.equal(d.repository.state.users['1'].accessStatus,'approved');
  assert.equal(d.repository.state.users['1'].fullName,'Владелец Команды');assert.deepEqual(d.repository.state.subscriptions['1'],['MSSI']);
- assert.match(last(d),/неделе|месяце|меню/i);
+ assert.ok(d.messages.at(-1).buttons.flat().some(b=>b.data==='admin|events|0'));
  run(d,message('2','/start synthetic-owner-once'));assert.equal(d.repository.state.users['2'].role,'member');
 });

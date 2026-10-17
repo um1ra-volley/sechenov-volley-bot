@@ -25,12 +25,13 @@ export interface Notification {
   notificationId:string; eventId?:string; userId:string; scope?:Scope; revision?:number;
   attendanceRevision?:number; type:string; dueAt:string; status:'pending'|'sending'|'sent'|'retry'|'uncertain'|'cancelled';
   attempts:number; nextAttemptAt?:string; messageId?:string; sentAt?:string; sendingAt?:string;
-  message:Message; error?:string; fulfills?:string[]; lease?:string;
+  message:Message; error?:string; fulfills?:string[]; lease?:string; terminal?:boolean;
 }
 export interface SourceState { lastSuccessAt?:string; lastError?:string; missing:Record<string,number>; snapshotHash?:string }
 export interface Operation { operationId:string; actorId?:string; action:string; targetId?:string; at:string; result:string; previous?:unknown; next?:unknown }
 export interface State {
   schemaVersion:1; stateVersion:number; runtime:Runtime; archives?:string[]; lastArchiveAt?:string;
+  archivedEvents?:Record<string,{revision:number;attendanceRevision:number}>;
   users:Record<string,User>; subscriptions:Record<string,Scope[]>; events:Record<string,Event>;
   participation:Record<string,Participation>; notifications:Record<string,Notification>;
   processedUpdates:Record<string,string>; sourceState:Record<string,SourceState>; operations:Operation[];

@@ -18,7 +18,7 @@ export function normalizeOwnRows(rows:unknown[][],scope:Scope):Event[]{
  if(name(rows[0]?.[0])!=='id игры')throw new Error('Изменилась структура таблицы');
  const seen=new Set<string>(),events:Event[]=[];
  for(const raw of rows.slice(1)){
-  const row=raw.map(clean);if(!row.some(Boolean))continue;
+  const row=Array.from({length:6},(_,i)=>clean(raw[i]));if(!row.some(Boolean))continue;
   const[id,date,clock,opponent,venue,statusValue]=row;
   if(!id||!new RegExp('^'+scope+'-[A-Za-z0-9-]{1,30}$').test(id)||seen.has(id))throw new Error('Некорректный или повторяющийся ID игры');
   seen.add(id);const localDate=fullDate(date),t=time(clock);
