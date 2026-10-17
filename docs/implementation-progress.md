@@ -33,3 +33,6 @@ Task 4: in progress; BASE c90a47fcd0b997d45f079d54389531bbfd334458.
 Task 4 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39036145229 — 36 passed, 14 failed for missing notification/delivery behavior.
 
 Task 4 regression RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39036622418 — 50 passed, one failed: answered queued follow-up was sent. Root cause: canDeliver rechecked subscription and revision but not a newly received answer. Fix: recheck valid current answer for follow-up before claim and before HTTP send.
+
+Task 4: complete (commits c90a47f..045fb5d; npm test 51/51, typecheck passed; regression RED→GREEN; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39036695031).
+Task 5: in progress; BASE 045fb5d2bdaf7f5c763c14ff75142e933a877296.
