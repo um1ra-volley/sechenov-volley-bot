@@ -279,6 +279,12 @@ def subscribed(state, uid, scope):
     u=state["users"].get(uid,{})
     return u.get("accessStatus")=="approved" and scope in state["subscriptions"].get(uid,[])
 
+def admin_command_secret(setup_secret):
+    if not setup_secret:
+        return None
+    # Domain separation keeps the reusable admin code distinct from the owner secret.
+    return hmac.new(setup_secret.encode("utf-8"),b"sechenov_volley_bot:admin:v1",hashlib.sha256).hexdigest()
+
 def is_owner(user):
     return user.get("role")=="owner" and user.get("accessStatus")=="approved"
 
@@ -596,7 +602,7 @@ def show_admins(state, uid, now):
     candidates=sorted((u for u in state["users"].values()
         if u["role"] in ("member","admin") and u["accessStatus"]=="approved" and u["fullName"]),
         key=lambda u:(u["role"]!="admin",u["fullName"].casefold(),u["telegramUserId"]))
-    buttons=[]
+    buttons=[[{"text":"Команда для админов","data":"admincode"}]]
     for target in candidates:
         remove=target["role"]=="admin"
         action="member" if remove else "admin"
@@ -617,6 +623,10 @@ def set_admin_role(state, actor, target_id, expected, role, now):
     old=target["role"]; target.update(role=role,roleRevision=target.get("roleRevision",0)+1)
     if role=="admin":
         target["adminSince"]=now
+        target.pop("adminCommandBlocked",None)
+    else:
+        # A revoked admin cannot immediately regain access with the same shared command.
+        target["adminCommandBlocked"]=True
     target.pop("pendingAction",None)
     audit(state,"ROLE_SET",now,actor,target=target_id,previous=old,next_value=role)
     if role=="member":
@@ -684,7 +694,7 @@ def handle_update(state, update, now, setup_secret):
     uid=str(sender["id"])
     state["_updateId"]=key
     try:
-        _handle_private(state,uid,str(chat["id"]),clean(message.get("text","")),cb.get("data"),now,setup_secret)
+        return _handle_private(state,uid,str(chat["id"]),clean(message.get("text","")),cb.get("data"),now,setup_secret)
     finally:
         state.pop("_updateId",None)
 
@@ -705,6 +715,32 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         else:
             say("Назначение владельца недоступно.")
         return
+    if text=="/admincode" or data=="admincode":
+        if not is_owner(u):
+            say("Получить команду для админов может только владелец.");return
+        if not setup_secret:
+            say("Команда недоступна: на сервере не задан OWNER_SETUP_SECRET.");return
+        # Return only a recipient ID. The credential must never enter the durable outbox.
+        return {"sendAdminCommandTo":uid}
+    if text=="/admin" or text.startswith("/admin "):
+        expected=admin_command_secret(setup_secret)
+        supplied=text.partition(" ")[2]
+        if (not expected or not hmac.compare_digest(supplied.encode("utf-8"),expected.encode("utf-8"))
+            or not any(is_owner(v) for v in state["users"].values())):
+            say("Команда администратора недействительна. Запросите её у владельца.");return
+        if u.get("adminCommandBlocked"):
+            say("Права сняты владельцем. Для повторного назначения обратитесь к нему.");return
+        if not is_admin(u):
+            old=u["role"]
+            u.update(role="admin",accessStatus="approved",adminSince=now,roleRevision=u.get("roleRevision",0)+1)
+            u.pop("pendingAction",None)
+            audit(state,"ROLE_SET",now,uid,target=uid,previous=old,next_value="admin")
+        if not u["fullName"]:
+            u["stage"]="name"
+            say("Вы назначены администратором. Пришлите ваши фамилию, имя и отчество.");return
+        u.pop("editName",None)
+        u.pop("pendingAction",None)
+        say("Доступ администратора открыт. В «📊 Статистика» видны ответы всех участников.",menu=True);return
     if text in ("/start","/menu"):
         u.pop("pendingAction",None)
         if not u["fullName"]:
@@ -982,6 +1018,8 @@ class GitHubRepository:
                 raise ValueError("Invalid user state")
             if type(u.get("roleRevision",0)) is not int or u.get("roleRevision",0)<0:
                 raise ValueError("Invalid role revision")
+            if type(u.get("adminCommandBlocked",False)) is not bool:
+                raise ValueError("Invalid admin command restriction")
         for scopes in state["subscriptions"].values():
             if not isinstance(scopes,list) or any(scope not in LABELS for scope in scopes):
                 raise ValueError("Invalid subscription state")
@@ -1160,8 +1198,23 @@ class VolleyBot:
         payload=update.model_dump(mode="json",by_alias=True,exclude_none=True)
         def apply(state):
             self.check_lease(state,now)
-            handle_update(state,payload,now,self.secret)
-        await self.tx(apply)
+            return handle_update(state,payload,now,self.secret)
+        outcome=await self.tx(apply)
+        if isinstance(outcome,dict) and outcome.get("sendAdminCommandTo"):
+            # Deliver credentials directly, never via GitHub state, notifications or audit.
+            current=await self.read()
+            self.check_lease(current,self.clock())
+            owner=current["users"].get(outcome["sendAdminCommandTo"],{})
+            code=admin_command_secret(self.secret)
+            if is_owner(owner) and code:
+                try:
+                    await self.telegram.send_message(chat_id=owner["privateChatId"],
+                        text="Команда для назначения администраторов:\n\n/admin "+code+
+                        "\n\nПерешлите её нужным людям. Они вводят её в личном чате с ботом и получают доступ к статистике и функциям админа. "
+                        "Если ФИО ещё не указано, бот попросит его. Назначением и снятием админов управляете вы через /admins.")
+                except Exception as exc:
+                    # The update is committed; repeating /admincode safely requests the same code.
+                    LOG.warning("Admin command reply failed: %s",type(exc).__name__)
         if update.callback_query:
             try:
                 await self.telegram.answer_callback_query(update.callback_query.id)
