@@ -102,3 +102,13 @@ test('Telegram transport encodes callback payload and does not expose token on t
  const failed=new telegram.TelegramApiTransport({http:{request(){throw new Error('synthetic-token in low-level error')}},token:'synthetic-token'});
  assert.throws(()=>failed.send({chatId:'2',text:'Игра'}),e=>e.uncertain===true&&!e.message.includes('synthetic-token'));
 });
+
+test('queued unanswered reminder is cancelled if user answers before delivery',()=>{
+ let s=fixture();previousPoll(s,'2');previousPoll(s,'3');answer(s,'2','yes');
+ const nextDay='2026-10-20T16:30:00.000Z';s=plan(s,nextDay);
+ s=applyCommand(s,{type:'RSVP',operationId:'late-answer',actorId:'3',data:{eventId:'G',revision:1,answer:'no'}},nextDay).state;
+ const repo=new Repository(s,nextDay);
+ deliver(repo,{send:()=> '99',edit(){},acknowledge(){}});
+ const reminder=Object.values(repo.state.notifications).find(n=>n.type==='followup'&&n.userId==='3');
+ assert.equal(reminder.status,'cancelled');
+});
