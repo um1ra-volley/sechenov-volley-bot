@@ -59,7 +59,7 @@ export class GitHubStateRepository {
    const base=this.snapshot(),runtime=base.state.runtime;
    if(runtime.id!==expectedRuntime.id||runtime.epoch!==expectedRuntime.epoch||runtime.id!==this.options.runtime.id||runtime.epoch!==this.options.runtime.epoch||runtime.paused)throw new Error('Неактивная среда или epoch');
    const result=applyCommand(base.state,command,this.options.clock.now());
-   if(result.duplicate)return result;
+   if(result.duplicate||result.state===base.state)return result;
    const values:Record<string,unknown>={'state/manifest.json':{schemaVersion:result.state.schemaVersion,stateVersion:result.state.stateVersion,runtime:result.state.runtime}};
    for(const[path,key]of Object.entries(sections))values[path]=result.state[key];
    const changes=Object.entries(values).map(([path,value])=>({path,mode:'100644',type:'blob',content:JSON.stringify(value)})).filter(item=>item.content!==base.files[item.path]);

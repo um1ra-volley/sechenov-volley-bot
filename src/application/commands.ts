@@ -1,3 +1,5 @@
+import { synchronize } from '../core/schedule.ts';
+import type { SourceSnapshot } from '../core/model.ts';
 import { SCOPES } from '../core/model.ts';
 import type { ApplyResult, Command, Scope, State, User } from '../core/model.ts';
 import { isUpcoming } from '../core/time.ts';
@@ -59,6 +61,13 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
   const key=eventId+':'+id,old=state.participation[key];previous=old??null;targetId=key;
   state.participation[key]={eventId,telegramUserId:id,attendanceRevision:event.attendanceRevision,answer:data.answer,invitedAt:old?.invitedAt??now,firstPollSentAt:old?.firstPollSentAt??null,answeredAt:now,answerSource:id===performer.telegramUserId?'user':'admin'};
   next=state.participation[key];break;
+ }
+ case 'SYNC_SOURCES':{
+  if(actor!==undefined)throw new Error('Нет прав доступа');
+  if(!Array.isArray(data.snapshots))throw new Error('Некорректный снимок');
+  Object.assign(state,synchronize(state,data.snapshots as SourceSnapshot[],now));
+  if(JSON.stringify(state)===JSON.stringify(input))return {state:input,effects:[],duplicate:false};
+  break;
  }
  case 'QUEUE_MESSAGES': {requireUser(state,actor);break;}
  default:throw new Error('Неизвестная команда');

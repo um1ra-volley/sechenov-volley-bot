@@ -1,0 +1,23 @@
+{
+  "ownSpreadsheetId": "1qoniSvNsRrRpxPycM8vqMcZq7gvO7lcGLYdjrEz0L3k",
+  "ownSheets": [
+    {
+      "scope": "MSSI",
+      "sheetName": "МССИ"
+    },
+    {
+      "scope": "LVL",
+      "sheetName": "лвл"
+    },
+    {
+      "scope": "LCHB",
+      "sheetName": "ЛЧБ"
+    }
+  ],
+  "championship": {
+    "spreadsheetId": "1WKhrg8yCAgbkB1bBg7XPv78H1z772IesmB8aKJYBh_Q",
+    "sheetName": "Высшая лига (муж, гр Б)",
+    "gid": 2047287896,
+    "season": "2026/2027"
+  }
+}

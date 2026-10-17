@@ -23,3 +23,6 @@ Task 2 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/3903540739
 
 Task 2: complete (commits 9245f3d..5845b64; npm test 25/25, typecheck passed; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035557379).
 Task 3: in progress; BASE 5845b64d6cca7d119c8a474d6a51e72c7603d5e5.
+
+Task 3 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035791469 — 25 passed, 11 failed because source normalization and sync were absent.
+Ruling: successful unchanged-source heartbeat is persisted at most once per 15 minutes — prevents empty five-minute commits while recording health in GitHub — cost if wrong: displayed last verified timestamp can lag by 15 minutes.
