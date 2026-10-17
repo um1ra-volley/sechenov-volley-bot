@@ -15,6 +15,8 @@ Python-реализация находится в **bot.py**, ветка **main*
 - Пользователи, ответы, доставка, cursor и runtime epoch хранятся в приватной ветке codex/bot-data.
 - Docker, перезапуск процесса, опциональное обновление из GitHub с возвратом предыдущего образа.
 
+Подробное расписание и правила доступа — [docs/notifications.md](docs/notifications.md).
+
 ## Запуск на сервере друга
 
 Инструкция рассчитана на Linux с Python 3.12, Git, Docker Engine и Docker Compose v2.
