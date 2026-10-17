@@ -38,3 +38,7 @@ Task 4: complete (commits c90a47f..045fb5d; npm test 51/51, typecheck passed; re
 Task 5: in progress; BASE 045fb5d2bdaf7f5c763c14ff75142e933a877296.
 
 Task 5 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39036935570 — 51 passed, 18 failed because Telegram handler was absent.
+
+Task 5: complete (commits 045fb5d..47fc248; npm test 69/69, typecheck passed; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39037152938).
+Task 6: in progress; BASE 47fc248cf1a1c92e215219afbc92776a84cd2661.
+Additional boundary checks: stale-source labels, midnight Moscow move, post-start owner correction, useful audit details and archival are included before runtime build.
