@@ -20,3 +20,6 @@ Task 1: complete (commits 759afc5..9245f3d; npm test 9/9, typecheck passed; http
 Task 2: in progress; BASE 9245f3d30188658d41099609c49edfff90ad4dd5.
 
 Task 2 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035407394 — 9 passed, 16 failed for missing reducer and repository.
+
+Task 2: complete (commits 9245f3d..5845b64; npm test 25/25, typecheck passed; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035557379).
+Task 3: in progress; BASE 5845b64d6cca7d119c8a474d6a51e72c7603d5e5.
