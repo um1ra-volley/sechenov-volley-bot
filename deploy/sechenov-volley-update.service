@@ -1,0 +1,19 @@
+[Unit]
+Description=Update Sechenov volley bot from private GitHub
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/sechenov-volley-bot
+Environment=BOT_ENV_FILE=/etc/sechenov-volley-bot.env
+Environment=BOT_DEPLOY_STATE_DIR=/var/lib/sechenov-volley-deploy
+Environment=CODE_BRANCH=codex/python-server
+StateDirectory=sechenov-volley-deploy
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /opt/sechenov-volley-bot/deploy/update.py
+TimeoutStartSec=20min
+PrivateTmp=true
+NoNewPrivileges=true

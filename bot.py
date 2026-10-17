@@ -436,7 +436,13 @@ def menu_markup(owner=False):
 
 def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False):
     prefix=key or f"ui:{state.get('_updateId','job')}:{uid}:"
-    parts=[text[i:i+3200] for i in range(0,len(text),3200)] or [""]
+    parts=[]; part=""; units=0
+    for char in text:
+        width=2 if ord(char)>0xFFFF else 1
+        if units+width>3200:
+            parts.append(part);part="";units=0
+        part+=char;units+=width
+    parts.append(part)
     for index,part in enumerate(parts):
         nid=prefix if key and len(parts)==1 else prefix+str(sum(n.startswith(prefix) for n in state["notifications"]))
         message={"chatId":state["users"][uid]["privateChatId"],"text":part}
@@ -1246,6 +1252,12 @@ async def serve(args):
     finally:
         await telegram.session.close()
 
+def redact(value):
+    for key,item in os.environ.items():
+        if ("TOKEN" in key or "SECRET" in key) and len(item)>=8:
+            value=value.replace(item,"[REDACTED]")
+    return re.sub(r"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+","[REDACTED]",value)
+
 def main():
     parser=argparse.ArgumentParser(description="Sechenov volleyball Telegram bot on aiogram 3")
     parser.add_argument("command",nargs="?",default="run",choices=("run","init","check","health","disable-webhook","takeover"))
@@ -1263,7 +1275,7 @@ def main():
         LOG.error("Stopped: %s",type(exc).__name__)
         # Explicit configuration messages are our own; never echo network exception bodies.
         if isinstance(exc,(ValueError,FencedError)) and not isinstance(exc,json.JSONDecodeError):
-            print(str(exc),file=sys.stderr)
+            print(redact(str(exc)),file=sys.stderr)
         raise SystemExit(1)
 
 if __name__=="__main__":

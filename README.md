@@ -1,27 +1,135 @@
-# sechenov-volley-bot
+# Sechenov Volley — Python server bot
 
-Telegram-бот [@sechenov_volley_bot](https://t.me/sechenov_volley_bot) для Сеченовского университета и команды Росэнергоатома в ЛЧБ.
+Рабочая серверная реализация находится в **bot.py**, ветка **codex/python-server**.
+Основа — [aiogram 3.31.0](https://github.com/aiogram/aiogram), Python 3.12+.
+Для запуска нужен постоянно включённый сервер с исходящим интернетом. Входящие порты и домен не требуются: используется polling.
 
-Реализованы подписки на **МССИ, ЛВЛ, ЧМ, ЛЧБ** и тренировки, сбор ФИО, ответы «Буду / Не буду», поимённая статистика владельца, ручные отметки, переносы и уведомления. Тренировки: **пн и чт, 19:30 МСК, Буревестник**.
+## Что реализовано
 
-## Документация
+- /start → ФИО → выбор МССИ, ЛВЛ, ЧМ, ЛЧБ и тренировок; владелец подтверждает участников.
+- Игры на оставшуюся неделю и текущий месяц: лига, соперник, день недели, дата, время МСК, место и число дней.
+- Личный опрос за неделю, один повтор неответившим через 24 часа после отправленного опроса, напоминание за сутки всем подписчикам.
+- Изменения расписания: было/стало; новая версия кнопок и повторное подтверждение при переносе/смене места.
+- Тренировки пн/чт, 19:30 МСК, Буревестник; перенос, отмена и восстановление отдельной тренировки.
+- Поимённые «будут / не будут / не ответили / подтвердить заново», ручные отметки владельца и история.
+- Пользователи, ответы, доставка, cursor и runtime epoch хранятся в приватной ветке codex/bot-data.
+- Docker, перезапуск процесса, опциональное обновление из GitHub с возвратом предыдущего образа.
 
-- [Архитектура](docs/superpowers/specs/2026-10-17-sechenov-volley-bot-design.md).
-- [План реализации](docs/superpowers/plans/2026-10-17-sechenov-volley-bot.md).
-- [Ход выполнения и проверки](docs/implementation-progress.md).
-- [Запуск в Google](docs/deployment.md).
-- [Эксплуатация и переключение среды](docs/operations.md).
+## Запуск на сервере друга
 
-## Размещение
+Инструкция рассчитана на Linux с Python 3.12, Git, Docker Engine и Docker Compose v2.
+Клонирование приватного репозитория требует уже выданного доступа dmitriyg0r и настроенной авторизации GitHub.
 
-Приватный GitHub хранит код и данные. Google Apps Script выполняет обработку. Исходное расписание читается из Google Sheets. Локальная копия проекта не требуется.
+Склонировать именно серверную ветку в /opt/sechenov-volley-bot:
 
-Секреты не входят в файлы Git. Все четыре секрета настроены в закрытых Google Script Properties. Для запуска остаются авторизация Google и реальная проверка webhook.
+~~~bash
+git clone --branch codex/python-server --single-branch https://github.com/um1ra-volley/sechenov-volley-bot.git /opt/sechenov-volley-bot
+cd /opt/sechenov-volley-bot
+~~~
 
-## Проверки и поставка
+Переданный владельцем secrets.env разместить **вне репозитория**, например /etc/sechenov-volley-bot.env, с правами 600.
+В нём нужны TELEGRAM_BOT_TOKEN, **новый** BOT_GITHUB_TOKEN для um1ra-volley/sechenov-volley-bot (Contents: read/write), OWNER_SETUP_SECRET.
+Реальных ключей в этом репозитории нет. Шаблон — [.env.example](.env.example).
 
-[GitHub Actions](https://github.com/um1ra/sechenov-volley-bot/actions) запускает Bot CI и проверку реальных транзакций GitHub на временной синтетической ветке. Артефакт apps-script-COMMIT содержит Code.gs и appsscript.json.
+~~~bash
+chmod 600 /etc/sechenov-volley-bot.env
+export BOT_ENV_FILE=/etc/sechenov-volley-bot.env
+docker compose --project-name sechenov-volley-bot -f deploy/compose.yml up -d --build
+docker compose --project-name sechenov-volley-bot -f deploy/compose.yml logs -f --tail=100 bot
+~~~
 
-## Состояние запуска
+Compose задаёт среду server-primary, epoch 1 и новый адрес GitHub. Старое RUNTIME_ID=gas-primary в переданном резервном файле переопределяется.
+При первом запуске бот проверяет своё имя, приватность GitHub и создаёт ветку данных, только если её ещё нет.
+Существующую ветку или неизвестный формат состояния он не обнуляет.
 
-Код реализован и прошёл независимый review с исправлением пяти важных сценариев. [Bot CI: 90 тестов, typecheck и сборка](https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039562333) и [реальные конкурентные транзакции GitHub](https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039562361) прошли на 0438ee794b792ba3da94dfa6d2703a145ed65f12. Подготовлен отдельный закрытый проект Google Apps Script. Рабочий Google deployment, реальные рассылки и приёмка webhook ещё не подтверждены. configureWebhook блокирует подключение Telegram, если реальная среда не проходит исходную HTTP-проверку.
+Владелец пишет боту в личном чате:
+
+~~~text
+/owner <значение OWNER_SETUP_SECRET из приватного файла>
+~~~
+
+После одноразовой привязки — ФИО и подписки. Другие участники проходят /start, а владелец одобряет их через «Заявки».
+/status показывает состояние, /pause и /resume управляют фоновыми рассылками.
+
+Если прежний webhook ещё установлен, бот остановится. После остановки старой среды отключить его явно, сохранив очередь:
+
+~~~bash
+docker compose --project-name sechenov-volley-bot -f deploy/compose.yml run --rm bot disable-webhook
+docker compose --project-name sechenov-volley-bot -f deploy/compose.yml up -d
+~~~
+
+## Автоматически подхватывать код из GitHub
+
+На сервере установщик образов требует Python 3.12, Git, Docker Compose и чистый checkout серверной ветки.
+Он читает ключ из внешнего файла, скачивает выбранный commit, собирает образ и только потом заменяет контейнер.
+При неуспешном запуске возвращает предыдущий образ; ветка данных и ответы не откатываются.
+Повторная установка той же неудачной версии требует --retry-failed или нового коммита.
+Тесты установщик не запускает.
+
+Для установки в указанные выше пути:
+
+~~~bash
+sudo cp deploy/sechenov-volley-update.service /etc/systemd/system/
+sudo cp deploy/sechenov-volley-update.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sechenov-volley-update.timer
+~~~
+
+Проверка новых коммитов — каждые две минуты. Состояние обновления:
+
+~~~bash
+systemctl status sechenov-volley-update.timer
+journalctl -u sechenov-volley-update.service -n 100
+~~~
+
+Ручное обновление тем же механизмом:
+
+~~~bash
+sudo env BOT_ENV_FILE=/etc/sechenov-volley-bot.env python3 deploy/update.py
+~~~
+
+Изменения кода делаются в codex/python-server. Обновления данных в codex/bot-data не вызывают пересборку.
+Не редактировать файлы checkout на сервере: updater сохраняет локальные изменения и отказывается их перезаписывать.
+Секреты, служебные файлы установки и heartbeat не включаются в Docker-образ.
+
+## Без Docker
+
+~~~bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+BOT_ENV_FILE=/etc/sechenov-volley-bot.env RUNTIME_ID=server-primary RUNTIME_EPOCH=1 .venv/bin/python bot.py run
+~~~
+
+Поддерживать этот процесс должен менеджер служб сервера. Автообновление выше предназначено для Docker.
+
+## Перенос на другой сервер
+
+Остановить старый процесс и дождаться завершения отправок. Сохранить SHA ветки данных.
+На новом сервере задать новый BOT_RUNTIME_ID и BOT_RUNTIME_EPOCH, равный прежнему + 1.
+Например, после epoch 1:
+
+~~~bash
+export BOT_RUNTIME_ID=server-secondary
+export BOT_RUNTIME_EPOCH=2
+docker compose --project-name sechenov-volley-bot -f deploy/compose.yml run --rm bot takeover --expected-epoch 1
+docker compose --project-name sechenov-volley-bot -f deploy/compose.yml up -d
+~~~
+
+После переключения владелец отправляет /resume. Прежний runtime блокируется по id/epoch.
+Параметры нового runtime должны сохраняться и в окружении systemd updater; не оставлять там epoch 1.
+Ветка данных никогда не откатывается вместе с кодом. Незавершённая отправка становится uncertain: владелец решает, повторять ли её.
+
+## Источники расписания
+
+В bot.py указаны четыре CSV-источника: собственные листы МССИ, лвл, ЛЧБ и мужская Высшая лига группы Б для ЧМ.
+Для ЧМ выбирается точное название «Сеченовский университет», для ЛЧБ — команда «Росэнергоатом».
+Учтён сезон 2026/2027 и переход через Новый год.
+При недоступности или подозрительно пустом ответе сохраняется последнее расписание; строка исчезает после двух корректных проверок.
+Чтение CSV использует текущий доступ к источникам. Если Google потребует авторизацию, бот покажет ошибку источника; права таблиц он не меняет.
+Для игры без времени напоминание планируется на 12:00 МСК предыдущего дня.
+
+## Статус проверки
+
+По прямому указанию владельца тесты и запуск серверной версии не выполнялись. Код прошёл просмотр.
+Фактическая работа на сервере друга подтверждается после его развёртывания; этот README не утверждает, что бот уже запущен.
+Прежняя реализация TypeScript/Google Apps Script сохранена в src/ и docs/ как история проекта.

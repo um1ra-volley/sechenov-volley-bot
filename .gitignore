@@ -3,3 +3,13 @@ dist/
 .env
 .clasprc.json
 *.log
+
+# Python/server secrets and transient files
+.env
+.env.*
+!.env.example
+*.env
+secrets.env
+__pycache__/
+*.py[cod]
+.venv/

@@ -12,3 +12,6 @@ Task 1: implemented CSV sources, Moscow dates, registration/owner approval, subs
 Task 2: implemented GitHub CAS with fresh-state replay and private-repository guard; aiogram API client; durable polling cursor, process lease and outbox. No runtime execution after the user's no-tests instruction.
 
 Task 3: implemented aiogram polling, explicit webhook disable preserving updates, init/check/takeover/health commands and environment loading. Process is not started on the owner's Mac.
+
+Task 4: Docker/Compose, secret template, server credential helper and optional systemd updater added. Candidate image is built before cutover; rollback preserves the data branch. README includes owner setup, migration and deployment commands.
+Task 5: static review in progress. User requested no test runs; no Python test files or automatic Python CI workflow added.

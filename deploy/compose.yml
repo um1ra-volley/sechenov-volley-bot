@@ -1,0 +1,31 @@
+services:
+  bot:
+    image: ${BOT_IMAGE:-sechenov-volley-bot:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${BOT_ENV_FILE:?Set BOT_ENV_FILE to an absolute secret-file path}
+    environment:
+      GITHUB_REPO: um1ra-volley/sechenov-volley-bot
+      DATA_BRANCH: ${BOT_DATA_BRANCH:-codex/bot-data}
+      RUNTIME_ID: ${BOT_RUNTIME_ID:-server-primary}
+      RUNTIME_EPOCH: ${BOT_RUNTIME_EPOCH:-1}
+      BOT_HEALTH_FILE: /tmp/sechenov-volley-health.json
+      PYTHONDONTWRITEBYTECODE: "1"
+      TZ: Europe/Moscow
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 75s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

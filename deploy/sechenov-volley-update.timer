@@ -1,0 +1,11 @@
+[Unit]
+Description=Check GitHub for volleyball bot code updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+RandomizedDelaySec=15s
+Unit=sechenov-volley-update.service
+
+[Install]
+WantedBy=timers.target
