@@ -51,3 +51,7 @@ Ruling: cloud tests require commits on the isolated feature branch before execut
 Ruling: initial Google publication uses the reviewed GitHub artifact directly in the browser — avoids local OAuth credential files — cost if wrong: automatic CI publication needs a separate Google OAuth setup; manual version updates remain available.
 
 Task 6 live bootstrap failure: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39038671311 — metadata GET with trailing slash returns 404. Confirmed with direct authenticated requests: canonical repository route succeeds, slash-suffixed route fails. Regression RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39038783245 — 80 passed, canonical bootstrap failed. Fixed shared API URL builder for empty relative path.
+
+Task 6: code verification complete (commits 47fc248..da8345e; npm test 81/81, strict typecheck and Apps Script build passed; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39038899166). Real private GitHub API transaction smoke passed with two simultaneous workers and confirmed both commands survived a forced same-parent conflict; synthetic branch removed: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39038899143.
+Task 6 deployment acceptance pending: Google OAuth, protected secret entry and actual deployed HTTP/Telegram checks are not performed. CI and build are not a production launch.
+Final review: fresh-context read-only whole-branch review dispatched for 759afc5..da8345e, including the plan's five Review Focus cases and every Ruling.
