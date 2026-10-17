@@ -1,6 +1,6 @@
 # Sechenov Volley — Python server bot
 
-Рабочая серверная реализация находится в **bot.py**, ветка **codex/python-server**.
+Python-реализация находится в **bot.py**, ветка **codex/python-server**.
 Основа — [aiogram 3.31.0](https://github.com/aiogram/aiogram), Python 3.12+.
 Для запуска нужен постоянно включённый сервер с исходящим интернетом. Входящие порты и домен не требуются: используется polling.
 

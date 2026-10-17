@@ -152,6 +152,9 @@ def normalize_chm(text, season):
     for raw in rows:
         row = [clean(raw[i] if i<len(raw) else "") for i in range(19)]
         home, away = row[8], row[18]
+        # A truncated game row can hide our away team; reject the snapshot before filtering.
+        if row[0].isdigit() and (len(raw)<19 or not home or not away):
+            raise ValueError("Incomplete championship game row")
         if normalized(home)!="сеченовский университет" and normalized(away)!="сеченовский университет":
             continue
         if not re.fullmatch(r"\d{1,12}",row[0]):
@@ -298,7 +301,7 @@ def can_deliver(state, notice, now):
         p=state["participation"].get(eid+":"+uid,{})
         if p.get("answer") and p.get("attendanceRevision")==e["attendanceRevision"] and notice["type"]=="followup":
             return False
-    return notice["type"]=="change" or upcoming(e,now)
+    return notice["type"] in ("change","ui") or upcoming(e,now)
 
 def has_notice(state, event, uid, kind):
     return any(n.get("eventId")==event["eventId"] and n["userId"]==uid
@@ -434,7 +437,7 @@ def menu_markup(owner=False):
         rows += [["📊 Статистика","👥 Заявки"],["⚙️ Состояние","🛠 Тренировки"]]
     return {"keyboard":[[{"text":text} for text in row] for row in rows],"resize_keyboard":True}
 
-def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False):
+def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, event=None):
     prefix=key or f"ui:{state.get('_updateId','job')}:{uid}:"
     parts=[]; part=""; units=0
     for char in text:
@@ -453,6 +456,9 @@ def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False):
                 message["replyMarkup"]=menu_markup(state["users"][uid]["role"]=="owner")
         state["notifications"][nid]=dict(notificationId=nid,userId=uid,type="ui",fulfills=["ui"],dueAt=now,
             status="pending",attempts=0,message=message)
+        if event is not None:
+            state["notifications"][nid].update(eventId=event["eventId"],revision=event["revision"],
+                attendanceRevision=event["attendanceRevision"])
 
 def subscription_dialog(state, uid, now):
     chosen=state["subscriptions"].get(uid,[])
@@ -485,7 +491,7 @@ def show_events(state, uid, now, period):
         source=state["sourceState"].get(e["sourceKey"],{})
         if source.get("lastError"):
             text+="\n⚠️ Источник недоступен. Последняя проверка: "+source.get("lastSuccessAt","не завершена")
-        queue_dialog(state,uid,text,now,attendance_buttons(e) if upcoming(e,now) else None,menu=True)
+        queue_dialog(state,uid,text,now,attendance_buttons(e) if upcoming(e,now) else None,menu=True,event=e)
 
 def show_stats(state, uid, eid, now):
     if eid not in state["events"]:
@@ -494,12 +500,13 @@ def show_stats(state, uid, eid, now):
     text=event_card(state["events"][eid],now)
     for key,label in (("yes","✅ Будут"),("no","❌ Не будут"),("unanswered","⏳ Не ответили"),("reconfirm","🔄 Подтвердить заново")):
         text+=f"\n\n{label} — {len(stats[key])}\n"+("\n".join("• "+u["fullName"] for u in stats[key]) or "—")
-    buttons=[[{"text":"Отметить участника","data":"marklist|"+eid}],[{"text":"История ответов","data":"history|"+eid}]]
+    revision=state["events"][eid]["attendanceRevision"]
+    buttons=[[{"text":"Отметить участника","data":f"marklist|{eid}|{revision}"}],[{"text":"История ответов","data":"history|"+eid}]]
     queue_dialog(state,uid,text,now,buttons)
 
-def save_answer(state, eid, target, answer, actor, now, source):
+def save_answer(state, eid, target, answer, actor, now, source, expected_revision=None):
     e=state["events"].get(eid)
-    if not e or answer not in ("yes","no") or not subscribed(state,target,e["scope"]):
+    if not e or answer not in ("yes","no") or not subscribed(state,target,e["scope"]) or (expected_revision is not None and str(e["attendanceRevision"])!=str(expected_revision)):
         return False
     key=eid+":"+target; old=state["participation"].get(key,{})
     audit(state,"ANSWER_SET",now,actor,target=key,previous=old.get("answer"),next_value={"answer":answer,"source":source,"attendanceRevision":e["attendanceRevision"]})
@@ -560,7 +567,7 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     say=lambda text,buttons=None,menu=False:queue_dialog(state,uid,text,now,buttons,menu=menu)
     if text.startswith("/owner "):
         supplied=text.partition(" ")[2]
-        if not any(v["role"]=="owner" for v in state["users"].values()) and setup_secret and hmac.compare_digest(supplied,setup_secret):
+        if not any(v["role"]=="owner" for v in state["users"].values()) and setup_secret and hmac.compare_digest(supplied.encode('utf-8'),setup_secret.encode('utf-8')):
             u.update(role="owner",accessStatus="approved")
             state["runtime"]["paused"]=False
             audit(state,"OWNER_BOUND",now,uid,target=uid)
@@ -666,21 +673,26 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     if data and data.startswith("stat|"):
         show_stats(state,uid,data[5:],now);return
     if data and data.startswith("marklist|"):
-        eid=data[9:];e=state["events"].get(eid)
-        if not e:
-            return
-        buttons=[[{"text":v["fullName"],"data":f"markpick|{eid}|{target}"}] for target,v in state["users"].items() if subscribed(state,target,e["scope"])]
+        parts=data.split("|")
+        e=state["events"].get(parts[1]) if len(parts)==3 else None
+        if not e or str(e["attendanceRevision"])!=parts[2]:
+            say("Меню отметок устарело. Откройте статистику события заново.");return
+        eid=e["eventId"]; revision=e["attendanceRevision"]
+        buttons=[[{"text":v["fullName"],"data":f"mp|{eid}|{target}|{revision}"}] for target,v in state["users"].items() if subscribed(state,target,e["scope"])]
         say("Кого отметить?",buttons);return
-    if data and data.startswith("markpick|"):
+    if data and data.startswith(("markpick|","mp|")):
         parts=data.split("|")
-        if len(parts)!=3 or parts[2] not in state["users"]:
-            return
-        say(state["users"][parts[2]]["fullName"],[[{"text":"✅ Будет","data":f"mark|{parts[1]}|{parts[2]}|y"},{"text":"❌ Не будет","data":f"mark|{parts[1]}|{parts[2]}|n"}]])
+        e=state["events"].get(parts[1]) if len(parts)==4 else None
+        if not e or str(e["attendanceRevision"])!=parts[3] or not subscribed(state,parts[2],e["scope"]):
+            say("Меню отметок устарело. Откройте статистику события заново.");return
+        say(state["users"][parts[2]]["fullName"]+"\n\n"+event_card(e,now),[[{"text":"✅ Будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|y"},{"text":"❌ Не будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|n"}]])
         return
-    if data and data.startswith("mark|"):
+    if data and data.startswith(("mark|","ma|")):
         parts=data.split("|")
-        if len(parts)==4 and parts[3] in ("y","n") and save_answer(state,parts[1],parts[2],"yes" if parts[3]=="y" else "no",uid,now,"admin"):
+        if len(parts)==5 and parts[4] in ("y","n") and save_answer(state,parts[1],parts[2],"yes" if parts[4]=="y" else "no",uid,now,"admin",expected_revision=parts[3]):
             show_stats(state,uid,parts[1],now)
+        else:
+            say("Меню отметок устарело. Откройте статистику события заново.")
         return
     if data and data.startswith("history|"):
         eid=data[8:]

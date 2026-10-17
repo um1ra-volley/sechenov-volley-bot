@@ -75,7 +75,14 @@ def deploy(retry_failed=False):
             cid=compose(old_config,environment,"ps","-aq","bot")
             if cid:
                 old_image=run(["docker","inspect","--format","{{.Config.Image}}",cid],env=environment)
-                active={"image":old_image,"compose":str(old_config)}
+                old_sha=run(["git","rev-parse","HEAD"])
+                baseline_dir=state_dir/"releases"/("baseline-"+old_sha)
+                baseline_dir.mkdir(parents=True,exist_ok=True)
+                baseline_config=baseline_dir/"compose.yml"
+                baseline_config.write_text(old_config.read_text(encoding="utf-8"),encoding="utf-8")
+                active={"sha":old_sha,"image":old_image,"compose":str(baseline_config)}
+                # Persist an immutable rollback target before checkout/cutover can change it.
+                save_json(active_file,active)
         image="sechenov-volley-bot:"+sha
         candidate_dir=state_dir/"releases"/sha
         candidate_dir.mkdir(parents=True,exist_ok=True)

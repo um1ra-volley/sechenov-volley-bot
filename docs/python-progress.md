@@ -15,3 +15,8 @@ Task 3: implemented aiogram polling, explicit webhook disable preserving updates
 
 Task 4: Docker/Compose, secret template, server credential helper and optional systemd updater added. Candidate image is built before cutover; rollback preserves the data branch. README includes owner setup, migration and deployment commands.
 Task 5: static review in progress. User requested no test runs; no Python test files or automatic Python CI workflow added.
+
+Static inspection: compare owner bootstrap secrets as UTF-8 bytes, so a non-ASCII invalid command is rejected rather than becoming an unprocessable update. No behavior tests were run for this change, per user instruction.
+
+Task 5: completed one independent static review; accepted all three Important findings (per-row CHM integrity, admin answer revision, queued event-card revalidation). Added immutable initial Compose rollback snapshot and UTF-8 secret comparison from own inspection. See docs/python-static-review.md. No declined findings or Declined-to-judge items. Syntax inspection only; no final runtime/test claims.
+Ruling: do not create a PR against main because the inherited pull_request workflow would run npm test. Cost: Python remains in codex/python-server until the owner chooses integration; server instructions explicitly use that branch.
