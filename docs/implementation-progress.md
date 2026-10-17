@@ -15,3 +15,6 @@ Task 1: in progress; BASE 759afc54d01a216d3223b1eb227caa2b7f9bd318.
 Tasks 2–6: pending.
 
 Task 1 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035056427 — npm test: 9 failed, missing date/training/state behavior as intended.
+
+Task 1: complete (commits 759afc5..9245f3d; npm test 9/9, typecheck passed; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035189342).
+Task 2: in progress; BASE 9245f3d30188658d41099609c49edfff90ad4dd5.
