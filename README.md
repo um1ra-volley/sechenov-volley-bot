@@ -24,4 +24,4 @@ Telegram-бот [@sechenov_volley_bot](https://t.me/sechenov_volley_bot) для 
 
 ## Состояние запуска
 
-Код находится на этапе проверки сборки и интеграции. Рабочий Google deployment, реальные рассылки и приёмка webhook ещё не подтверждены. configureWebhook блокирует подключение Telegram, если реальная среда не проходит исходную HTTP-проверку.
+Код реализован и прошёл независимый review с исправлением пяти важных сценариев. [Bot CI: 90 тестов, typecheck и сборка](https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039562333) и [реальные конкурентные транзакции GitHub](https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039562361) прошли на 0438ee794b792ba3da94dfa6d2703a145ed65f12. Подготовлен отдельный закрытый проект Google Apps Script. Рабочий Google deployment, реальные рассылки и приёмка webhook ещё не подтверждены. configureWebhook блокирует подключение Telegram, если реальная среда не проходит исходную HTTP-проверку.

@@ -60,3 +60,12 @@ Final review: five Important findings, no Critical or retained Minor findings, D
 
 Final fix-pass RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039484255 — eight failing regressions reproduce all five findings (bootstrap, three concurrent training cases including real repository CAS replay, shortened rows, two terminal-delivery cases, archive reimport). Eligibility cancellation positive control remains green.
 Final: Ruling: archived source rows remain immutable historical snapshots; only an explicit future scheduled/postponed instance restores the same ID with increased event and attendance versions — prevents old source rows from undoing archival or reviving stale buttons — cost if wrong: corrections to already-past source rows require deliberate archive/operator handling rather than automatic historical rewrites.
+
+Final: fixed owner bootstrap after ordinary /start — existing-profile owner promotion and single-owner test RED→GREEN, suite 90/90.
+Final: fixed stale training synchronization — cancel/move interleavings and Git CAS replay RED→GREEN, suite 90/90.
+Final: fixed truncated Google Values rows — omitted venue/status normalization RED→GREEN, suite 90/90.
+Final: fixed exhausted and permanent delivery reset — 500 retry exhaustion and 400 terminal failure RED→GREEN, eligibility cancellation control green, suite 90/90.
+Final: fixed archived event reimport — repeated source reads leave historical game archived; explicit future restoration increments both versions RED→GREEN, suite 90/90.
+Final verification: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039562333 — exact implementation commit 0438ee794b792ba3da94dfa6d2703a145ed65f12, strict typecheck, build, 90 tests passed. Real concurrent GitHub API smoke passed and removed its synthetic branch: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39039562361.
+Final: minor (deferred): none. Declined to judge: empty. No further review dispatch; the single fix pass is verified by regression tests and full suite.
+Google preparation: private owner-only Apps Script project created at https://script.google.com/home/projects/1XrxZwArTrWqUvYVW9_49c9P8M4Bn_bNaGaCUilxXT3Nuz_EM2mdhP_5J/edit. Code and manifest transferred in memory through browser UI; no local source/artifact files. Non-secret runtime settings saved. No credentials entered, OAuth granted, public deployment created, runtime activated or real Telegram messages sent.
