@@ -13,3 +13,5 @@ Pre-flight:
 
 Task 1: in progress; BASE 759afc54d01a216d3223b1eb227caa2b7f9bd318.
 Tasks 2–6: pending.
+
+Task 1 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035056427 — npm test: 9 failed, missing date/training/state behavior as intended.
