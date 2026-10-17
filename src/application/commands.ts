@@ -1,3 +1,4 @@
+import { planNotifications, canDeliver } from '../core/reminders.ts';
 import { synchronize } from '../core/schedule.ts';
 import type { SourceSnapshot } from '../core/model.ts';
 import { SCOPES } from '../core/model.ts';
@@ -61,6 +62,39 @@ export function applyCommand(input:State,command:Command,now:string):ApplyResult
   const key=eventId+':'+id,old=state.participation[key];previous=old??null;targetId=key;
   state.participation[key]={eventId,telegramUserId:id,attendanceRevision:event.attendanceRevision,answer:data.answer,invitedAt:old?.invitedAt??now,firstPollSentAt:old?.firstPollSentAt??null,answeredAt:now,answerSource:id===performer.telegramUserId?'user':'admin'};
   next=state.participation[key];break;
+ }
+ case 'PLAN_NOTIFICATIONS':{
+  if(actor!==undefined)throw new Error('Нет прав доступа');
+  Object.assign(state,planNotifications(state,now));
+  if(JSON.stringify(state)===JSON.stringify(input))return {state:input,effects:[],duplicate:false};
+  break;
+ }
+ case 'DELIVERY_CLAIM':case 'DELIVERY_RESULT':case 'DELIVERY_RECOVER':{
+  if(actor!==undefined)throw new Error('Нет прав доступа');
+  const id=text(data,'notificationId'),notification=state.notifications[id];if(!notification)throw new Error('Уведомление не найдено');
+  if(command.type==='DELIVERY_CLAIM'){
+   if(!['pending','retry'].includes(notification.status)||Date.parse(notification.nextAttemptAt??notification.dueAt)>Date.parse(now))throw new Error('Уведомление уже обрабатывается');
+   if(!canDeliver(state,notification,now)){notification.status='cancelled';break;}
+   notification.status='sending';notification.attempts++;notification.sendingAt=now;notification.lease=command.operationId;
+  }else if(command.type==='DELIVERY_RECOVER'){
+   if(notification.status!=='sending'||!notification.sendingAt||Date.parse(now)-Date.parse(notification.sendingAt)<300000)throw new Error('Нет просроченной отправки');
+   notification.status='uncertain';notification.error='Истёк срок подтверждения отправки';
+  }else{
+   if(notification.status!=='sending'||notification.lease!==data.lease)throw new Error('Устаревшее подтверждение отправки');
+   if(!['sent','retry','uncertain','cancelled'].includes(String(data.status)))throw new Error('Некорректная доставка');
+   notification.status=data.status as 'sent'|'retry'|'uncertain'|'cancelled';
+   notification.error=typeof data.error==='string'?data.error:undefined;
+   if(notification.status==='sent'){
+    notification.messageId=text(data,'messageId');notification.sentAt=now;
+    if((notification.fulfills??[notification.type]).includes('poll')&&notification.eventId){
+     const p=state.participation[notification.eventId+':'+notification.userId];
+     if(p&&p.pollRevision===notification.attendanceRevision)p.firstPollSentAt=now;
+    }
+   }
+   if(notification.status==='retry')notification.nextAttemptAt=text(data,'nextAttemptAt');
+   if(data.blocked===true&&state.users[notification.userId])state.users[notification.userId].deliveryStatus='blocked';
+  }
+  break;
  }
  case 'SYNC_SOURCES':{
   if(actor!==undefined)throw new Error('Нет прав доступа');

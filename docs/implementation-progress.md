@@ -29,3 +29,5 @@ Ruling: successful unchanged-source heartbeat is persisted at most once per 15 m
 
 Task 3: complete (commits 5845b64..c90a47f; npm test 36/36, typecheck passed; https://github.com/um1ra/sechenov-volley-bot/actions/runs/39035938754).
 Task 4: in progress; BASE c90a47fcd0b997d45f079d54389531bbfd334458.
+
+Task 4 RED: https://github.com/um1ra/sechenov-volley-bot/actions/runs/39036145229 — 36 passed, 14 failed for missing notification/delivery behavior.

@@ -16,7 +16,7 @@ export interface Event {
 export interface Participation {
   eventId:string; telegramUserId:string; attendanceRevision:number; answer:Answer;
   invitedAt:string; firstPollSentAt:string|null; answeredAt:string|null;
-  answerSource:'user'|'admin'|null;
+  answerSource:'user'|'admin'|null; pollRevision?:number;
 }
 export interface Button { text:string; data:string }
 export interface Message { chatId:string; text:string; buttons?:Button[][]; messageId?:string }
@@ -25,7 +25,7 @@ export interface Notification {
   notificationId:string; eventId?:string; userId:string; scope?:Scope; revision?:number;
   attendanceRevision?:number; type:string; dueAt:string; status:'pending'|'sending'|'sent'|'retry'|'uncertain'|'cancelled';
   attempts:number; nextAttemptAt?:string; messageId?:string; sentAt?:string; sendingAt?:string;
-  message:Message; error?:string;
+  message:Message; error?:string; fulfills?:string[]; lease?:string;
 }
 export interface SourceState { lastSuccessAt?:string; lastError?:string; missing:Record<string,number>; snapshotHash?:string }
 export interface Operation { operationId:string; actorId?:string; action:string; targetId?:string; at:string; result:string; previous?:unknown; next?:unknown }
