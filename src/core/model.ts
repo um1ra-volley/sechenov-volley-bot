@@ -28,14 +28,14 @@ export interface Notification {
   message:Message; error?:string;
 }
 export interface SourceState { lastSuccessAt?:string; lastError?:string; missing:Record<string,number>; snapshotHash?:string }
-export interface Operation { operationId:string; actorId?:string; action:string; targetId?:string; at:string; result:string }
+export interface Operation { operationId:string; actorId?:string; action:string; targetId?:string; at:string; result:string; previous?:unknown; next?:unknown }
 export interface State {
   schemaVersion:1; stateVersion:number; runtime:Runtime;
   users:Record<string,User>; subscriptions:Record<string,Scope[]>; events:Record<string,Event>;
   participation:Record<string,Participation>; notifications:Record<string,Notification>;
   processedUpdates:Record<string,string>; sourceState:Record<string,SourceState>; operations:Operation[];
 }
-export interface Command { type:string; operationId:string; updateId?:string; actorId?:string; data:Record<string,unknown> }
+export interface Command { type:string; operationId:string; updateId?:string; actorId?:string; data:Record<string,unknown>; effects?:Effect[] }
 export interface ApplyResult { state:State; effects:Effect[]; duplicate:boolean }
 export interface SourceSnapshot { sourceId:string; ok:boolean; events:Event[]; observedAt:string; error?:string }
 export interface HttpResponse { status:number; body:string; headers:Record<string,string> }

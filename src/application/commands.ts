@@ -1,0 +1,75 @@
+import { SCOPES } from '../core/model.ts';
+import type { ApplyResult, Command, Scope, State, User } from '../core/model.ts';
+import { isUpcoming } from '../core/time.ts';
+function text(data:Record<string,unknown>,key:string):string {
+ const value=data[key];if(typeof value!=='string'||!value)throw new Error('Некорректные данные: '+key);return value;
+}
+function userId(value:string):string {if(!/^\d{1,20}$/.test(value))throw new Error('Некорректный Telegram ID');return value;}
+function requireUser(state:State,id?:string):User {const user=id?state.users[id]:undefined;if(!user)throw new Error('Сначала нажмите /start');return user;}
+function owner(state:State,id?:string):User {const user=requireUser(state,id);if(user.role!=='owner'||user.accessStatus!=='approved')throw new Error('Нет прав доступа');return user;}
+function scope(value:unknown):Scope {if(typeof value!=='string'||!SCOPES.includes(value as Scope))throw new Error('Неизвестная лига');return value as Scope;}
+export function applyCommand(input:State,command:Command,now:string):ApplyResult {
+ if(!command.operationId||typeof command.operationId!=='string')throw new Error('Нужен ID операции');
+ if((command.updateId&&input.processedUpdates[command.updateId])||input.operations.some(o=>o.operationId===command.operationId))return {state:input,effects:[],duplicate:true};
+ const state:State=JSON.parse(JSON.stringify(input)), data=command.data, actor=command.actorId;
+ let previous:unknown,next:unknown,targetId:string|undefined;
+ switch(command.type){
+ case 'START':{
+  const id=userId(actor??'');const chatId=userId(text(data,'chatId'));if(id!==chatId)throw new Error('Нужен личный чат');
+  if(!state.users[id]){
+   const isOwner=data.bootstrapOwner===true&&!Object.values(state.users).some(u=>u.role==='owner');
+   state.users[id]={telegramUserId:id,privateChatId:chatId,fullName:'',role:isOwner?'owner':'member',accessStatus:isOwner?'approved':'pending',stage:'name',registeredAt:now,deliveryStatus:'active'};
+   state.subscriptions[id]=[];
+  }else state.users[id].deliveryStatus='active';
+  break;
+ }
+ case 'SET_NAME':{
+  const user=requireUser(state,actor),name=text(data,'fullName').trim().replace(/\s+/g,' ');
+  if(name.length<2||name.length>120||!/[\p{L}]/u.test(name))throw new Error('Введите ФИО, от 2 до 120 символов');
+  previous=user.fullName;user.fullName=name;next=name;
+  if(user.stage==='name')user.stage='subscriptions';
+  break;
+ }
+ case 'SET_SCOPE':{
+  const user=requireUser(state,actor);if(user.accessStatus==='rejected')throw new Error('Нет доступа');
+  const selected=scope(data.scope);if(typeof data.enabled!=='boolean')throw new Error('Некорректная подписка');
+  const list=state.subscriptions[user.telegramUserId]??[];
+  state.subscriptions[user.telegramUserId]=data.enabled?Array.from(new Set([...list,selected])):list.filter(s=>s!==selected);
+  break;
+ }
+ case 'STOP':{const user=requireUser(state,actor);state.subscriptions[user.telegramUserId]=[];break;}
+ case 'FINISH_REGISTRATION':{
+  const user=requireUser(state,actor);if(!user.fullName)throw new Error('Сначала введите ФИО');user.stage='ready';break;
+ }
+ case 'APPROVE':case 'REJECT':{
+  owner(state,actor);const id=userId(text(data,'userId')),user=requireUser(state,id);
+  if(user.role==='owner')throw new Error('Нельзя изменить доступ владельца');
+  user.accessStatus=command.type==='APPROVE'?'approved':'rejected';targetId=id;break;
+ }
+ case 'RSVP':{
+  const performer=requireUser(state,actor);
+  const id=typeof data.userId==='string'?userId(data.userId):performer.telegramUserId;
+  if(id!==performer.telegramUserId)owner(state,actor);
+  const user=requireUser(state,id);if(user.accessStatus!=='approved')throw new Error('Нет доступа');
+  const eventId=text(data,'eventId'),event=state.events[eventId];if(!event)throw new Error('Игра не найдена');
+  if(!isUpcoming(event,now))throw new Error('Событие уже началось или завершено');
+  if(!(state.subscriptions[id]??[]).includes(event.scope))throw new Error('Нет подписки на эту лигу');
+  if(data.revision!==event.attendanceRevision)throw new Error('Устаревшая версия игры: откройте новую карточку');
+  if(data.answer!=='yes'&&data.answer!=='no')throw new Error('Выберите Буду или Не буду');
+  const key=eventId+':'+id,old=state.participation[key];previous=old??null;targetId=key;
+  state.participation[key]={eventId,telegramUserId:id,attendanceRevision:event.attendanceRevision,answer:data.answer,invitedAt:old?.invitedAt??now,firstPollSentAt:old?.firstPollSentAt??null,answeredAt:now,answerSource:id===performer.telegramUserId?'user':'admin'};
+  next=state.participation[key];break;
+ }
+ case 'QUEUE_MESSAGES': {requireUser(state,actor);break;}
+ default:throw new Error('Неизвестная команда');
+ }
+ const effects=command.effects??[];
+ for(let index=0;index<effects.length;index++){
+  const effect=effects[index],id=command.operationId+':ui:'+index;
+  state.notifications[id]={notificationId:id,userId:effect.userId??effect.chatId,type:'ui',dueAt:now,status:'pending',attempts:0,message:{chatId:effect.chatId,text:effect.text,buttons:effect.buttons,messageId:effect.kind==='edit'?effect.messageId:undefined}};
+ }
+ if(command.updateId)state.processedUpdates[command.updateId]=now;
+ state.stateVersion++;
+ state.operations.push({operationId:command.operationId,actorId:actor,action:command.type,targetId,at:now,result:'ok',previous,next});
+ return {state,effects,duplicate:false};
+}
