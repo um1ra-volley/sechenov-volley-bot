@@ -112,3 +112,19 @@ test('queued unanswered reminder is cancelled if user answers before delivery',(
  const reminder=Object.values(repo.state.notifications).find(n=>n.type==='followup'&&n.userId==='3');
  assert.equal(reminder.status,'cancelled');
 });
+
+for(const status of [500,400])test('terminal Telegram '+status+' failure cannot reset attempts during planning',()=>{
+ const repo=new Repository(plan(fixture(),week),week);let sends=0;
+ const transport={send(){sends++;throw new telegram.TelegramError(status,0,false)},edit(){},acknowledge(){}};
+ for(let i=0;i<5;i++){deliver(repo,transport);repo.now=new Date(Date.parse(repo.now)+3600000).toISOString();}
+ const stopped=Object.values(repo.state.notifications).map(n=>[n.notificationId,n.attempts,n.status]);
+ assert.ok(stopped.every(n=>n[2]==='cancelled'));const exhausted=sends;
+ for(let i=0;i<3;i++){repo.state=plan(repo.state,repo.now);deliver(repo,transport);repo.now=new Date(Date.parse(repo.now)+300000).toISOString();}
+ assert.equal(sends,exhausted);assert.deepEqual(Object.values(repo.state.notifications).map(n=>[n.notificationId,n.attempts,n.status]),stopped);
+});
+test('eligibility cancellation still permits a deliberate later resubscription',()=>{
+ let s=plan(fixture(),week);s.subscriptions['2']=[];s=plan(s,week);
+ assert.equal(Object.values(s.notifications).find(n=>n.userId==='2').status,'cancelled');
+ s.subscriptions['2']=['MSSI'];s=plan(s,week);
+ assert.equal(Object.values(s.notifications).find(n=>n.userId==='2').status,'pending');
+});

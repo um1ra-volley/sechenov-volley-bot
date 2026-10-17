@@ -68,3 +68,10 @@ test('initial snapshot never emits historical change alerts',()=>{
  const s=sync(createState('gas-primary',1),[event('MSSI-1')]);
  assert.equal(s.operations.filter(o=>o.action==='EVENT_CHANGED').length,0);
 });
+
+test('short Google Values rows permit omitted trailing venue and status cells',()=>{
+ const events=normalize([header,['MSSI-1','26.10.2026','','ГУЗ'],['MSSI-2','02.11.2026','19:30','МГЮА']]);
+ assert.deepEqual(events.map(e=>[e.venue,e.status]),[['','scheduled'],['','scheduled']]);
+ assert.equal(events[0].startAtUtc,null);assert.equal(events[1].startAtUtc,'2026-11-02T16:30:00.000Z');
+ assert.throws(()=>normalize([header,['MSSI-3','26.10.2026']]),/соперник/i);
+});

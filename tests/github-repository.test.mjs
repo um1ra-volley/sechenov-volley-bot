@@ -75,3 +75,16 @@ test('bootstrap uses canonical repository metadata URL and preserves an existing
  const result=repository(http).initialise(createState('other',1));
  assert.equal(result.users['8'].fullName,'Существующий Игрок');assert.equal(result.runtime.id,'gas-primary');assert.equal(http.current,'base');
 });
+
+test('CAS replay preserves a newly committed training exception instead of replaying a stale snapshot',()=>{
+ const http=new GitServer(),repo=repository(http);
+ const original={eventId:'TRAINING-2026-10-19',sourceKey:'TRAINING',scope:'TRAINING',kind:'training',team:'Сеченовский университет',opponent:'',localDate:'2026-10-19',startAtUtc:'2026-10-19T16:30:00.000Z',venue:'Буревестник',status:'scheduled',revision:1,attendanceRevision:1};
+ http.states.base.events[original.eventId]=original;
+ const request=http.request.bind(http);let conflict=true;
+ http.request=(method,url,body,headers)=>{
+  if(method==='PATCH'&&conflict){conflict=false;const state=structuredClone(http.states[http.current]);state.events[original.eventId]={...original,status:'cancelled',revision:2};http.states.external=state;http.current='external';return http.response(422,{message:'Not a fast forward'});}
+  return request(method,url,body,headers);
+ };
+ repo.transact({type:'SYNC_SOURCES',operationId:'stale-training-sync',data:{snapshots:[{sourceId:'TRAINING',ok:true,events:[original],observedAt:now}]}});
+ assert.equal(repo.read().events[original.eventId].status,'cancelled');assert.equal(repo.read().events[original.eventId].revision,2);
+});

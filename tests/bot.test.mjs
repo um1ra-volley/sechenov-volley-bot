@@ -100,3 +100,14 @@ test('old queued name prompt is cancelled when user submits FIO',()=>{
  d.repository.state.notifications.old={notificationId:'old',userId:'2',type:'ui',dueAt:now,status:'pending',attempts:0,message:{chatId:'2',text:'Старый вопрос: введите ФИО'}};
  run(d,message('2','Новое Имя'));assert.equal(d.repository.state.notifications.old.status,'cancelled');assert.equal(d.messages.some(m=>m.text.includes('Старый вопрос')),false);
 });
+
+test('owner bootstrap promotes an existing profile once and preserves their registration',()=>{
+ const d=fixture(true);
+ run(d,message('1','/start'));run(d,message('1','Владелец Команды'));run(d,callback('1','sub|MSSI|1'));run(d,callback('1','finish'));
+ assert.equal(d.repository.state.users['1'].role,'member');
+ run(d,message('1','/start synthetic-owner-once'));
+ assert.equal(d.repository.state.users['1'].role,'owner');assert.equal(d.repository.state.users['1'].accessStatus,'approved');
+ assert.equal(d.repository.state.users['1'].fullName,'Владелец Команды');assert.deepEqual(d.repository.state.subscriptions['1'],['MSSI']);
+ assert.match(last(d),/неделе|месяце|меню/i);
+ run(d,message('2','/start synthetic-owner-once'));assert.equal(d.repository.state.users['2'].role,'member');
+});
