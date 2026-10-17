@@ -36,8 +36,8 @@ def deploy(retry_failed=False):
     if not secret_path.is_file():
         raise RuntimeError("Set BOT_ENV_FILE to the existing private secrets file")
     load_environment(secret_path)
-    branch=os.environ.get("CODE_BRANCH","codex/python-server")
-    if not re.fullmatch(r"codex/[A-Za-z0-9][A-Za-z0-9/-]*",branch):
+    branch=os.environ.get("CODE_BRANCH","main")
+    if not re.fullmatch(r"(?:main|codex/[A-Za-z0-9][A-Za-z0-9/-]*)",branch):
         raise RuntimeError("Invalid CODE_BRANCH")
     state_dir=Path(os.environ.get("BOT_DEPLOY_STATE_DIR","/var/lib/sechenov-volley-deploy")).expanduser()
     state_dir.mkdir(parents=True,exist_ok=True,mode=0o700)

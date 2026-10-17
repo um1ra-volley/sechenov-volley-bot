@@ -1,6 +1,6 @@
 # Sechenov Volley — Python server bot
 
-Python-реализация находится в **bot.py**, ветка **codex/python-server**.
+Python-реализация находится в **bot.py**, ветка **main**.
 Основа — [aiogram 3.31.0](https://github.com/aiogram/aiogram), Python 3.12+.
 Для запуска нужен постоянно включённый сервер с исходящим интернетом. Входящие порты и домен не требуются: используется polling.
 
@@ -23,7 +23,7 @@ Python-реализация находится в **bot.py**, ветка **codex
 Склонировать именно серверную ветку в /opt/sechenov-volley-bot:
 
 ~~~bash
-git clone --branch codex/python-server --single-branch https://github.com/um1ra-volley/sechenov-volley-bot.git /opt/sechenov-volley-bot
+git clone --branch main --single-branch https://github.com/um1ra-volley/sechenov-volley-bot.git /opt/sechenov-volley-bot
 cd /opt/sechenov-volley-bot
 ~~~
 
@@ -88,7 +88,7 @@ journalctl -u sechenov-volley-update.service -n 100
 sudo env BOT_ENV_FILE=/etc/sechenov-volley-bot.env python3 deploy/update.py
 ~~~
 
-Изменения кода делаются в codex/python-server. Обновления данных в codex/bot-data не вызывают пересборку.
+Изменения кода делаются в main. Обновления данных в codex/bot-data не вызывают пересборку.
 Не редактировать файлы checkout на сервере: updater сохраняет локальные изменения и отказывается их перезаписывать.
 Секреты, служебные файлы установки и heartbeat не включаются в Docker-образ.
 

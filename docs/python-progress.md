@@ -20,3 +20,5 @@ Static inspection: compare owner bootstrap secrets as UTF-8 bytes, so a non-ASCI
 
 Task 5: completed one independent static review; accepted all three Important findings (per-row CHM integrity, admin answer revision, queued event-card revalidation). Added immutable initial Compose rollback snapshot and UTF-8 secret comparison from own inspection. See docs/python-static-review.md. No declined findings or Declined-to-judge items. Syntax inspection only; no final runtime/test claims.
 Ruling: do not create a PR against main because the inherited pull_request workflow would run npm test. Cost: Python remains in codex/python-server until the owner chooses integration; server instructions explicitly use that branch.
+
+Integration: the owner explicitly requested main. Server instructions, systemd CODE_BRANCH and updater default now use main; the data branch remains codex/bot-data. Publish with [skip ci] to honour the no-tests instruction. Keep both feature branches and their history. No local source files or server deployment.

@@ -10,7 +10,7 @@ User=root
 WorkingDirectory=/opt/sechenov-volley-bot
 Environment=BOT_ENV_FILE=/etc/sechenov-volley-bot.env
 Environment=BOT_DEPLOY_STATE_DIR=/var/lib/sechenov-volley-deploy
-Environment=CODE_BRANCH=codex/python-server
+Environment=CODE_BRANCH=main
 StateDirectory=sechenov-volley-deploy
 StateDirectoryMode=0700
 ExecStart=/usr/bin/python3 /opt/sechenov-volley-bot/deploy/update.py

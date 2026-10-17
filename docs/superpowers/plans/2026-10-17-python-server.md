@@ -18,3 +18,6 @@ Review focus: two concurrent replies and failed CAS; crash after Telegram accept
 
 ## User correction during implementation
 Use a reviewed ready Telegram framework (aiogram 3.31.0). Stop tests and CI runs. Deliver Python code, Docker/server instructions and an independent static review. Earlier test artifacts are not a claim that the final server runtime has been run.
+
+## Owner-authorized integration
+The owner subsequently requested main. Integrate the Python branch into main, preserving its history, and set server deployment/updater defaults to main. Skip CI for this integration; no test or bot execution. Feature branches remain available.
