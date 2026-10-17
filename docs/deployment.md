@@ -62,3 +62,5 @@ configureWebhook автоматически выполняет исходную 
 ## Подготовленная среда на 17.10.2026
 
 [Проект sechenov-volley-bot](https://script.google.com/home/projects/1XrxZwArTrWqUvYVW9_49c9P8M4Bn_bNaGaCUilxXT3Nuz_EM2mdhP_5J/edit) создан в аккаунте владельца. Проверено: доступ ограничен, в списке только владелец. В редактор перенесены Code.gs и manifest; заданы RUNTIME_ID=gas-primary, RUNTIME_EPOCH=1 и DATA_BRANCH=codex/bot-data. Дальше нужны защищённый ввод четырёх секретов владельцем, авторизация Google, публикация endpoint и реальная приёмка. До этих шагов бот не считается запущенным.
+
+Все четыре секретных свойства сохранены 17.10.2026. Telegram getMe подтвердил @sechenov_volley_bot; два служебных секрета созданы случайно по разрешению владельца. Значения остаются только в Script Properties. Следующий шаг — авторизация Google и живая приёмка.
