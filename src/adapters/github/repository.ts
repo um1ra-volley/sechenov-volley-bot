@@ -20,7 +20,7 @@ export class GitHubStateRepository {
  }
  private response(method:string,path:string,body?:unknown,raw=false):HttpResponse {
   let result:HttpResponse;
-  try {result=this.options.http.request(method,'https://api.github.com/repos/'+this.options.repo+'/'+path,body,{Authorization:'Bearer '+this.options.token,Accept:raw?'application/vnd.github.raw+json':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});}
+  try {result=this.options.http.request(method,'https://api.github.com/repos/'+this.options.repo+(path?'/'+path:''),body,{Authorization:'Bearer '+this.options.token,Accept:raw?'application/vnd.github.raw+json':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});}
   catch{throw new GitHubError(0);}
   return result;
  }
