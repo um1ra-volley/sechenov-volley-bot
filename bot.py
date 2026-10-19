@@ -304,6 +304,14 @@ def admit_named_user(state, uid, now):
     audit(state,"ACCESS_AUTO_GRANTED",now,uid,target=uid,previous=previous,next_value="approved")
     return True
 
+def valid_absence_reason(reason):
+    return isinstance(reason,str) and 3<=len(clean(reason))<=500
+
+def answer_complete(participation,event):
+    return (participation.get("answer") in ("yes","no")
+        and participation.get("attendanceRevision")==event["attendanceRevision"]
+        and (participation["answer"]!="no" or valid_absence_reason(participation.get("absenceReason"))))
+
 def event_stats(state, eid):
     event=state["events"][eid]
     result={k:[] for k in ("yes","no","unanswered","reconfirm")}
@@ -311,7 +319,7 @@ def event_stats(state, eid):
         if not subscribed(state,uid,event["scope"]):
             continue
         p=state["participation"].get(eid+":"+uid,{})
-        key="reconfirm" if p.get("answer") and p.get("attendanceRevision")!=event["attendanceRevision"] else p.get("answer") or "unanswered"
+        key="reconfirm" if p.get("answer") and not answer_complete(p,event) else p.get("answer") or "unanswered"
         result[key].append(u)
     for values in result.values():
         values.sort(key=lambda u:u["fullName"].casefold())
@@ -349,16 +357,24 @@ def can_deliver(state, notice, now):
     required=notice.get("requiredRole")
     if required and not (is_owner(user) if required=="owner" else is_admin(user) if required=="admin" else False):
         return False
+    active_id=notice.get("activeEventId")
+    if active_id:
+        active=state["events"].get(active_id)
+        if (not active or not upcoming(active,now)
+            or notice.get("activeAttendanceRevision")!=active["attendanceRevision"]):
+            return False
     eid=notice.get("eventId")
     if not eid:
         return True
     e=state["events"].get(eid)
     if not e or not subscribed(state,uid,e["scope"]) or notice["revision"]!=e["revision"]:
         return False
+    if notice["type"]=="ui" and not upcoming(e,now):
+        return False
     if "followup" in notice.get("fulfills",[notice["type"]]):
         p=state["participation"].get(eid+":"+uid,{})
         if notice["type"]=="followup":
-            if p.get("answer") and p.get("attendanceRevision")==e["attendanceRevision"]:
+            if answer_complete(p,e):
                 return False
             if notice.get("followupAfter") and latest_prompt_at(state,e,uid,exclude=notice["notificationId"])!=notice["followupAfter"]:
                 return False
@@ -453,7 +469,7 @@ def plan_notifications(state, now):
                 kinds.append("training_2day")
             if clock>=start-timedelta(days=1) and not has_notice(state,e,uid,"day"):
                 kinds.append("day")
-            if (not p.get("answer") or p.get("attendanceRevision")!=e["attendanceRevision"]) and last_prompt and clock>=instant(last_prompt)+timedelta(days=1) and not waiting_prompt(state,e,uid):
+            if not answer_complete(p,e) and last_prompt and clock>=instant(last_prompt)+timedelta(days=1) and not waiting_prompt(state,e,uid):
                 kinds.append("followup")
             if not kinds:
                 continue
@@ -509,7 +525,7 @@ def menu_markup(role="member"):
         rows += [["👑 Администраторы"]]
     return {"keyboard":[[{"text":text} for text in row] for row in rows],"resize_keyboard":True}
 
-def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, event=None, required_role=None):
+def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, event=None, required_role=None, active_event=None):
     user=state["users"][uid]
     if required_role is None and is_admin(user):
         required_role="admin"
@@ -533,6 +549,9 @@ def queue_dialog(state, uid, text, now, buttons=None, key=None, menu=False, even
             status="pending",attempts=0,message=message)
         if required_role:
             state["notifications"][nid]["requiredRole"]=required_role
+        if active_event is not None:
+            state["notifications"][nid].update(activeEventId=active_event["eventId"],
+                activeAttendanceRevision=active_event["attendanceRevision"])
         if event is not None:
             state["notifications"][nid].update(eventId=event["eventId"],revision=event["revision"],
                 attendanceRevision=event["attendanceRevision"])
@@ -565,7 +584,7 @@ def show_events(state, uid, now, period):
         elif period=="nextweek":
             include=next_start<=day<=next_end and upcoming(e,now)
         else:
-            include=day.year==today.year and day.month==today.month
+            include=day.year==today.year and day.month==today.month and upcoming(e,now)
         if include:
             found.append(e)
     if not found:
@@ -578,18 +597,69 @@ def show_events(state, uid, now, period):
             text+="\n⚠️ Источник недоступен. Последняя проверка: "+source.get("lastSuccessAt","не завершена")
         queue_dialog(state,uid,text,now,attendance_buttons(e) if upcoming(e,now) else None,menu=True,event=e)
 
+def attendance_snapshot(state,now):
+    users=[{"id":uid,"name":user["fullName"] or "ФИО не указано · "+uid,
+        "subscriptions":", ".join(LABELS[scope] for scope in state["subscriptions"].get(uid,[]) if scope in LABELS)}
+        for uid,user in state["users"].items()]
+    result={"users":users,"events":[],"summaries":{}}
+    for event in sorted(state["events"].values(),key=lambda e:(e["localDate"],e.get("startAtUtc") or "",e["eventId"])):
+        day=date.fromisoformat(event["localDate"])
+        clock=instant(event["startAtUtc"]).astimezone(MSK).strftime("%H:%M") if event.get("startAtUtc") else "время уточняется"
+        title="Тренировка" if event["kind"]=="training" else event["opponent"]
+        status={"cancelled":"ОТМЕНЕНО","removed":"СНЯТО ИЗ РАСПИСАНИЯ"}.get(event["status"],
+            "ПРОШЛО" if not upcoming(event,now) else "ПЕРЕНЕСЕНО" if event["status"]=="postponed" else "")
+        header=f"{LABELS[event['scope']]} · {day:%d.%m.%Y}\n{clock} · {title}"+("\n"+status if status else "")
+        answers={}
+        for user in users:
+            uid=user["id"];p=state["participation"].get(event["eventId"]+":"+uid,{})
+            if p.get("answer") and not answer_complete(p,event):
+                value="↻ Подтвердить заново"
+                if p["answer"]=="no" and not valid_absence_reason(p.get("absenceReason")):
+                    value="↻ Не буду — укажите причину"
+            elif p.get("answer")=="yes":
+                value="+ Буду"
+            elif p.get("answer")=="no":
+                value="− Не буду — "+p["absenceReason"]
+            else:
+                value="⏳ Не ответил" if subscribed(state,uid,event["scope"]) else "— Не подписан"
+            if p.get("answer") and not subscribed(state,uid,event["scope"]):
+                value+=" (подписка отключена)"
+            answers[uid]=value
+        result["events"].append({"id":event["eventId"],"header":header,"answers":answers})
+        if event["scope"] in ("MSSI","LVL","LCHB"):
+            stats=event_stats(state,event["eventId"])
+            groups=[]
+            for key,label in (("yes","+ Будут"),("no","− Не будут"),("unanswered","⏳ Не ответили"),("reconfirm","↻ Уточнить ответ")):
+                names=[]
+                for user in stats[key]:
+                    reason=state["participation"].get(event["eventId"]+":"+user["telegramUserId"],{}).get("absenceReason")
+                    names.append(user["fullName"]+(" — "+reason if key=="no" and reason else ""))
+                groups.append(f"{label}: {len(names)}"+("\n"+"\n".join(names) if names else ""))
+            result["summaries"][event["eventId"]]={
+                "text":f"+ Будут: {len(stats['yes'])} · − Не будут: {len(stats['no'])}\n⏳ Не ответили: {len(stats['unanswered'])} · ↻ Уточнить: {len(stats['reconfirm'])}",
+                "note":"\n\n".join(groups)}
+    return result
+
 def show_stats(state, uid, eid, now):
     if not is_admin(state["users"].get(uid,{})):
         queue_dialog(state,uid,"Статистика доступна администраторам.",now); return
-    if eid not in state["events"]:
-        queue_dialog(state,uid,"Событие не найдено.",now); return
+    event=state["events"].get(eid)
+    if not event or not upcoming(event,now):
+        queue_dialog(state,uid,"Событие завершилось или снято с расписания. Откройте актуальный список.",now,menu=True); return
     stats=event_stats(state,eid)
-    text=event_card(state["events"][eid],now)
-    for key,label in (("yes","✅ Будут"),("no","❌ Не будут"),("unanswered","⏳ Не ответили"),("reconfirm","🔄 Подтвердить заново")):
-        text+=f"\n\n{label} — {len(stats[key])}\n"+("\n".join("• "+u["fullName"] for u in stats[key]) or "—")
-    revision=state["events"][eid]["attendanceRevision"]
+    text=event_card(event,now)
+    for key,label in (("yes","✅ Будут"),("no","❌ Не будут"),("unanswered","⏳ Не ответили"),("reconfirm","🔄 Уточнить ответ")):
+        names=[]
+        for user in stats[key]:
+            participation=state["participation"].get(eid+":"+user["telegramUserId"],{})
+            suffix=(" — "+participation["absenceReason"]) if key=="no" else (
+                " — нужна причина отсутствия" if key=="reconfirm" and participation.get("answer")=="no"
+                and not valid_absence_reason(participation.get("absenceReason")) else "")
+            names.append("• "+user["fullName"]+suffix)
+        text+=f"\n\n{label} — {len(stats[key])}\n"+("\n".join(names) or "—")
+    revision=event["attendanceRevision"]
     buttons=[[{"text":"Отметить участника","data":f"marklist|{eid}|{revision}"}],[{"text":"История ответов","data":"history|"+eid}]]
-    queue_dialog(state,uid,text,now,buttons)
+    queue_dialog(state,uid,text,now,buttons,active_event=event)
 
 def show_admins(state, uid, now):
     if not is_owner(state["users"].get(uid,{})):
@@ -638,25 +708,50 @@ def set_admin_role(state, actor, target_id, expected, role, now):
                     n["status"]="cancelled"
     return True
 
-def save_answer(state, eid, target, answer, actor, now, source, expected_revision=None):
+def save_answer(state, eid, target, answer, actor, now, source, expected_revision=None, reason=None, expected_answer_revision=None):
     if source=="admin" and not is_admin(state["users"].get(actor,{})):
         return False
     e=state["events"].get(eid)
-    if not e or answer not in ("yes","no") or not subscribed(state,target,e["scope"]) or (expected_revision is not None and str(e["attendanceRevision"])!=str(expected_revision)):
+    if (not e or not upcoming(e,now) or answer not in ("yes","no") or not subscribed(state,target,e["scope"])
+        or (expected_revision is not None and str(e["attendanceRevision"])!=str(expected_revision))
+        or (answer=="no" and not valid_absence_reason(reason))):
         return False
     key=eid+":"+target; old=state["participation"].get(key,{})
-    audit(state,"ANSWER_SET",now,actor,target=key,previous=old.get("answer"),next_value={"answer":answer,"source":source,"attendanceRevision":e["attendanceRevision"]})
+    if expected_answer_revision is not None and old.get("answerRevision",0)!=expected_answer_revision:
+        return False
+    reason=clean(reason) if answer=="no" else None
+    audit(state,"ANSWER_SET",now,actor,target=key,previous=old.get("answer"),next_value={
+        "answer":answer,"source":source,"attendanceRevision":e["attendanceRevision"],"absenceReason":reason})
     state["participation"][key]={**old,"eventId":eid,"telegramUserId":target,"attendanceRevision":e["attendanceRevision"],
-        "answer":answer,"answerSource":source,"answeredAt":now,"invitedAt":old.get("invitedAt",now),
+        "answer":answer,"absenceReason":reason,"answerRevision":old.get("answerRevision",0)+1,
+        "answerSource":source,"answeredAt":now,"invitedAt":old.get("invitedAt",now),
         "firstPollSentAt":old.get("firstPollSentAt")}
+    return True
+
+def request_absence_reason(state, actor, eid, target, revision, now, source):
+    event=state["events"].get(eid)
+    if (not event or not upcoming(event,now) or str(event["attendanceRevision"])!=str(revision)
+        or not subscribed(state,target,event["scope"])
+        or (source=="admin" and not is_admin(state["users"].get(actor,{})))):
+        return False
+    previous=state["participation"].get(eid+":"+target,{})
+    state["users"][actor]["pendingAction"]={"kind":"absence-reason","eventId":eid,"targetUserId":target,
+        "attendanceRevision":event["attendanceRevision"],"answerRevision":previous.get("answerRevision",0),"source":source}
+    name=state["users"][target]["fullName"]
+    queue_dialog(state,actor,"Укажите причину отсутствия"+(" участника "+name if source=="admin" else "")+
+        " одним сообщением (от 3 до 500 символов). Ответ «Не буду» сохранится после ввода причины.\n\n"+
+        event_card(event,now),now,[[{"text":"Отмена","data":"reasoncancel|"+eid}]],
+        active_event=event)
     return True
 
 def change_training(state, eid, action, now, actor, moved=None):
     if not is_admin(state["users"].get(actor,{})):
         raise ValueError("Управление тренировками доступно администраторам")
     old=state["events"].get(eid)
-    if not old or old["kind"]!="training":
+    if not old or old["kind"]!="training" or event_instant(old)<=instant(now):
         raise ValueError("Тренировка не найдена")
+    if action!="restore" and not upcoming(old,now):
+        raise ValueError("Тренировка уже отменена или удалена")
     new=copy.deepcopy(old)
     if action=="cancel":
         new["status"]="cancelled"
@@ -741,6 +836,15 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         u.pop("editName",None)
         u.pop("pendingAction",None)
         say("Доступ администратора открыт. В «📊 Статистика» видны ответы всех участников.",menu=True);return
+    if text=="/cancel" or (data and data.startswith("reasoncancel|")):
+        pending=u.get("pendingAction")
+        if pending and pending.get("kind")=="absence-reason" and (
+            text=="/cancel" or data=="reasoncancel|"+pending["eventId"]):
+            u.pop("pendingAction",None)
+            say("Ввод причины отменён. Прежний ответ сохранён.",menu=True)
+        else:
+            say("Ожидающего ввода причины нет.",menu=True)
+        return
     if text in ("/start","/menu"):
         u.pop("pendingAction",None)
         if not u["fullName"]:
@@ -787,16 +891,36 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     if text in ("/subscriptions","⚙️ Подписки"):
         subscription_dialog(state,uid,now); return
     if text in ("/name","👤 Моё ФИО"):
+        u.pop("pendingAction",None)
         u["editName"]=True; say("Пришлите новое ФИО."); return
     if u["accessStatus"]!="approved":
         say("Для доступа укажите ФИО через /start."); return
+    pending=u.get("pendingAction")
+    menu_texts={button["text"] for row in menu_markup(u["role"])["keyboard"] for button in row}
+    if pending and pending.get("kind")=="absence-reason" and text and not data and text not in menu_texts and not text.startswith("/"):
+        if not valid_absence_reason(text):
+            say("Причина обязательна: напишите от 3 до 500 символов. Для отмены — /cancel.");return
+        accepted=save_answer(state,pending["eventId"],pending["targetUserId"],"no",uid,now,pending["source"],
+            expected_revision=pending["attendanceRevision"],reason=text,expected_answer_revision=pending["answerRevision"])
+        u.pop("pendingAction",None)
+        if not accepted:
+            say("Ответ или событие изменились. Откройте актуальное событие и ответьте заново.",menu=True);return
+        if pending["source"]=="admin":
+            show_stats(state,uid,pending["eventId"],now)
+        else:
+            say("Ответ сохранён: не буду. Причина: "+clean(text),menu=True)
+        return
     if data and data.startswith("r|"):
         parts=data.split("|")
         e=state["events"].get(parts[1]) if len(parts)==4 else None
         if not e or str(e["attendanceRevision"])!=parts[2] or not upcoming(e,now) or not subscribed(state,uid,e["scope"]) or parts[3] not in ("y","n"):
             say("Эта кнопка устарела или подписка отключена. Откройте актуальное расписание.");return
-        save_answer(state,e["eventId"],uid,"yes" if parts[3]=="y" else "no",uid,now,"user")
-        say("Ответ сохранён: "+("буду." if parts[3]=="y" else "не буду."),menu=True);return
+        if parts[3]=="n":
+            request_absence_reason(state,uid,e["eventId"],uid,parts[2],now,"user");return
+        save_answer(state,e["eventId"],uid,"yes",uid,now,"user",expected_revision=parts[2])
+        if u.get("pendingAction",{}).get("kind")=="absence-reason":
+            u.pop("pendingAction",None)
+        say("Ответ сохранён: буду.",menu=True);return
     if text in ("/week","📅 Игры на неделю"):
         show_events(state,uid,now,"week");return
     if text in ("/nextweek","📆 Игры на следующей неделе"):
@@ -841,7 +965,7 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     if text in ("/stats","📊 Статистика","🛠 Тренировки"):
         training=text=="🛠 Тренировки"
         today=instant(now).astimezone(MSK).date()
-        items=[e for e in state["events"].values() if today-timedelta(days=7)<=date.fromisoformat(e["localDate"])<=today+timedelta(days=31) and (not training or e["kind"]=="training")]
+        items=[e for e in state["events"].values() if upcoming(e,now) and date.fromisoformat(e["localDate"])<=today+timedelta(days=31) and (not training or e["kind"]=="training")]
         buttons=[[{"text":f"{LABELS[e['scope']]} {date.fromisoformat(e['localDate']):%d.%m} {e['opponent']}"[:60],"data":("train|" if training else "stat|")+e["eventId"]}] for e in sorted(items,key=lambda e:(e["localDate"],e["eventId"]))]
         say("Выберите событие:" if buttons else "Событий пока нет.",buttons[:40]);return
     if data and data.startswith("stat|"):
@@ -849,41 +973,57 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
     if data and data.startswith("marklist|"):
         parts=data.split("|")
         e=state["events"].get(parts[1]) if len(parts)==3 else None
-        if not e or str(e["attendanceRevision"])!=parts[2]:
+        if not e or not upcoming(e,now) or str(e["attendanceRevision"])!=parts[2]:
             say("Меню отметок устарело. Откройте статистику события заново.");return
         eid=e["eventId"]; revision=e["attendanceRevision"]
         buttons=[[{"text":v["fullName"],"data":f"mp|{eid}|{target}|{revision}"}] for target,v in state["users"].items() if subscribed(state,target,e["scope"])]
-        say("Кого отметить?",buttons);return
+        queue_dialog(state,uid,"Кого отметить?",now,buttons,active_event=e);return
     if data and data.startswith(("markpick|","mp|")):
         parts=data.split("|")
         e=state["events"].get(parts[1]) if len(parts)==4 else None
-        if not e or str(e["attendanceRevision"])!=parts[3] or not subscribed(state,parts[2],e["scope"]):
+        if not e or not upcoming(e,now) or str(e["attendanceRevision"])!=parts[3] or not subscribed(state,parts[2],e["scope"]):
             say("Меню отметок устарело. Откройте статистику события заново.");return
         say(state["users"][parts[2]]["fullName"]+"\n\n"+event_card(e,now),[[{"text":"✅ Будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|y"},{"text":"❌ Не будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|n"}]])
         return
     if data and data.startswith(("mark|","ma|")):
         parts=data.split("|")
-        if len(parts)==5 and parts[4] in ("y","n") and save_answer(state,parts[1],parts[2],"yes" if parts[4]=="y" else "no",uid,now,"admin",expected_revision=parts[3]):
+        if len(parts)!=5 or parts[4] not in ("y","n"):
+            return
+        if parts[4]=="n":
+            if not request_absence_reason(state,uid,parts[1],parts[2],parts[3],now,"admin"):
+                say("Меню отметок устарело. Откройте актуальную статистику.")
+            return
+        if save_answer(state,parts[1],parts[2],"yes",uid,now,"admin",expected_revision=parts[3]):
+            if u.get("pendingAction",{}).get("kind")=="absence-reason":
+                u.pop("pendingAction",None)
             show_stats(state,uid,parts[1],now)
         else:
             say("Меню отметок устарело. Откройте статистику события заново.")
         return
     if data and data.startswith("history|"):
         eid=data[8:]
+        event=state["events"].get(eid)
+        if not event or not upcoming(event,now):
+            say("Событие завершилось или снято с расписания. Откройте актуальную статистику.",menu=True);return
         rows=[]
         for op in state["operations"]:
             if op["action"]=="ANSWER_SET" and op.get("targetId","").startswith(eid+":"):
                 target=op["targetId"][len(eid)+1:]
-                rows.append(f"{op['at']}: {state['users'].get(target,{}).get('fullName',target)} — {op['previous'] or 'нет ответа'} → {op['next']['answer']} ({op['next']['source']})")
-        say("\n".join(rows[-30:]) or "Ответов пока нет.");return
+                rows.append(f"{op['at']}: {state['users'].get(target,{}).get('fullName',target)} — {op['previous'] or 'нет ответа'} → {op['next']['answer']} ({op['next']['source']})"+(" — "+op['next']['absenceReason'] if op['next'].get('absenceReason') else ""))
+        queue_dialog(state,uid,"\n".join(rows[-30:]) or "Ответов пока нет.",now,active_event=event);return
     if data and data.startswith("train|"):
         eid=data[6:]
+        event=state["events"].get(eid)
+        if not event or event["kind"]!="training" or not upcoming(event,now):
+            say("Тренировка завершилась или отменена. Откройте актуальный список.",menu=True);return
         say("Управление отдельной тренировкой",[[{"text":"Отменить","data":"tcancel|"+eid},{"text":"Восстановить","data":"trestore|"+eid}],[{"text":"Перенести","data":"tmove|"+eid}]])
         return
     if data and data.startswith(("tcancel|","trestore|","tmove|")):
         action,eid=data.split("|",1)
-        if eid not in state["events"] or state["events"][eid]["kind"]!="training":
-            return
+        if eid not in state["events"] or state["events"][eid]["kind"]!="training" or event_instant(state["events"][eid])<=instant(now):
+            say("Тренировка завершилась или удалена.");return
+        if state["events"][eid]["status"]=="removed" or (action!="trestore" and not upcoming(state["events"][eid],now)):
+            say("Тренировка уже отменена или удалена.");return
         if action=="tmove":
             u["pendingAction"]={"kind":"move-training","eventId":eid}
             say("Пришлите ДД.ММ.ГГГГ ЧЧ:ММ. Новое место можно добавить через « / ».")
@@ -899,6 +1039,8 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         counts={}
         for n in state["notifications"].values():
             counts[n["status"]]=counts.get(n["status"],0)+1
+        export=state.get("attendanceExport",{})
+        rows.append("Google-таблица: "+(export.get("lastError") or "обновлена "+export.get("lastSuccessAt","ещё не синхронизирована")))
         rows.append("Доставка: "+", ".join(f"{k}: {v}" for k,v in counts.items()))
         buttons=[[{"text":"Проверить расписание","data":"sync"}]]
         for n in state["notifications"].values():
@@ -1027,6 +1169,12 @@ class GitHubRepository:
             if not isinstance(e,dict) or e.get("eventId")!=eid or e.get("scope") not in LABELS or not isinstance(e.get("attendanceRevision"),int):
                 raise ValueError("Invalid event state")
             full_date(e["localDate"]); event_instant(e)
+        for participation in state["participation"].values():
+            if not isinstance(participation,dict) or type(participation.get("answerRevision",0)) is not int or participation.get("answerRevision",0)<0:
+                raise ValueError("Invalid participation revision")
+            reason=participation.get("absenceReason")
+            if reason is not None and not isinstance(reason,str):
+                raise ValueError("Invalid absence reason")
         for n in state["notifications"].values():
             if not isinstance(n,dict) or n.get("status") not in ("pending","sending","sent","retry","uncertain","cancelled") or not isinstance(n.get("message"),dict):
                 raise ValueError("Invalid delivery state")
@@ -1154,9 +1302,10 @@ class SheetSource:
             return list(pool.map(one,self.sources))
 
 class VolleyBot:
-    def __init__(self,repository,telegram,sources,setup_secret,clock=now_utc):
+    def __init__(self,repository,telegram,sources,setup_secret,clock=now_utc,attendance=None):
         self.repo,self.telegram,self.sources=repository,telegram,sources
         self.secret,self.clock=setup_secret,clock
+        self.attendance=attendance
         self.instance_id=uuid.uuid4().hex
         self.stop=__import__("asyncio").Event()
 
@@ -1336,6 +1485,49 @@ class VolleyBot:
                         current["users"][n["userId"]]["deliveryStatus"]="blocked"
             await self.tx(complete)
 
+    async def export_attendance(self):
+        import asyncio
+        if self.attendance is None:
+            return
+        now=self.clock()
+        state=await self.read()
+        self.check_lease(state,now)
+        previous=state.get("attendanceExport",{})
+        if previous.get("nextAttemptAt") and instant(previous["nextAttemptAt"])>instant(now):
+            return
+        snapshot=attendance_snapshot(state,now)
+        signature=hashlib.sha256((self.attendance.identity+"|"+dumps(snapshot)).encode()).hexdigest()
+        if previous.get("signature")==signature and previous.get("lastCheckedAt") and instant(now)-instant(previous["lastCheckedAt"])<timedelta(minutes=5):
+            return
+        error=None
+        if not self.attendance.configured:
+            error="Не настроен доступ Google на запись: GOOGLE_SERVICE_ACCOUNT_JSON"
+            if previous.get("lastError")==error:
+                return
+        else:
+            def fence():
+                self.check_lease(self.repo.read(),self.clock())
+            try:
+                await asyncio.to_thread(self.attendance.sync,snapshot,fence)
+            except FencedError:
+                raise
+            except Exception as exc:
+                from attendance_sheet import AttendanceSheetError
+                error=str(exc) if isinstance(exc,AttendanceSheetError) else "Ошибка синхронизации Google ("+type(exc).__name__+")"
+        finished=self.clock()
+        def record(current):
+            self.check_lease(current,finished)
+            old=current.get("attendanceExport",{})
+            current["attendanceExport"]={**old,"lastCheckedAt":finished,"lastError":error,
+                "nextAttemptAt":iso(instant(finished)+timedelta(minutes=5)) if error else None}
+            if not error:
+                current["attendanceExport"].update(signature=signature,lastSuccessAt=finished)
+            if error!=old.get("lastError"):
+                for uid,user in current["users"].items():
+                    if is_admin(user):
+                        queue_dialog(current,uid,"Google-таблица: "+(error or "синхронизация восстановлена."),finished,required_role="admin")
+        await self.tx(record)
+
     async def poll_once(self):
         await self.acquire_lease()
         state=await self.read(); self.check_lease(state,self.clock())
@@ -1347,6 +1539,7 @@ class VolleyBot:
             await self.process_update(update)
         # No higher offset is sent until all prior updates were durably committed.
         await self.tick()
+        await self.export_attendance()
         await self.deliver_due()
 
     async def run(self):
@@ -1458,14 +1651,15 @@ async def serve(args):
         if args.command=="init":
             print("Private data branch is initialized; existing data was preserved.")
             return
-        app=VolleyBot(repository,telegram,sources,os.environ["OWNER_SETUP_SECRET"])
+        from attendance_sheet import GoogleAttendance
+        app=VolleyBot(repository,telegram,sources,os.environ["OWNER_SETUP_SECRET"],attendance=GoogleAttendance(http))
         await app.run()
     finally:
         await telegram.session.close()
 
 def redact(value):
     for key,item in os.environ.items():
-        if ("TOKEN" in key or "SECRET" in key) and len(item)>=8:
+        if ("TOKEN" in key or "SECRET" in key or key=="GOOGLE_SERVICE_ACCOUNT_JSON") and len(item)>=8:
             value=value.replace(item,"[REDACTED]")
     return re.sub(r"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+","[REDACTED]",value)
 

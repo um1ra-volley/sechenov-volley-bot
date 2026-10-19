@@ -7,7 +7,7 @@ RUN apt-get update \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt \
     && useradd --uid 10001 --create-home --shell /usr/sbin/nologin volley
-COPY --chown=10001:10001 bot.py /app/bot.py
+COPY --chown=10001:10001 bot.py attendance_sheet.py /app/
 USER 10001:10001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=5 \
     CMD ["python", "/app/bot.py", "health"]
