@@ -21,7 +21,7 @@ def column_name(number):
 
 def matrix_values(old,snapshot):
     """Merge by Telegram/event IDs, preserving archived columns and former users."""
-    if old and (len(old)<2 or old[1][:4]!=MATRIX_PREFIX):
+    if old and (len(old)<2 or [str(value or "") for value in old[1][:4]]!=MATRIX_PREFIX):
         raise AttendanceSheetError("Заголовки листа «Посещаемость» изменены")
     ids=old[1][4:] if old else []
     if any(not isinstance(eid,str) or not eid for eid in ids) or len(set(ids))!=len(ids):
@@ -48,7 +48,10 @@ def matrix_values(old,snapshot):
                 person["answers"][event["id"]]=event["answers"][uid]
     def order(eid):
         found=re.search(r"(\d{2})\.(\d{2})\.(\d{4})",headers[eid])
-        return (found[3]+found[2]+found[1] if found else "99999999",headers[eid],eid)
+        day=found[3]+found[2]+found[1] if found else "99999999"
+        closed=(day<snapshot["today"].replace("-","") or headers[eid].splitlines()[-1] in
+            ("ПРОШЛО","ОТМЕНЕНО","СНЯТО ИЗ РАСПИСАНИЯ"))
+        return (closed,-int(day) if closed else int(day),headers[eid],eid)
     ids.sort(key=order)
     rows=[["№","ФИО","Telegram ID","Подписки",*[headers[eid] for eid in ids]],MATRIX_PREFIX+ids]
     users=sorted(people.values(),key=lambda u:(u["name"].casefold().replace("ё","е"),u["id"]))

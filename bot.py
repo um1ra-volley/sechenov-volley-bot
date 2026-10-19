@@ -601,7 +601,7 @@ def attendance_snapshot(state,now):
     users=[{"id":uid,"name":user["fullName"] or "ФИО не указано · "+uid,
         "subscriptions":", ".join(LABELS[scope] for scope in state["subscriptions"].get(uid,[]) if scope in LABELS)}
         for uid,user in state["users"].items()]
-    result={"users":users,"events":[],"summaries":{}}
+    result={"users":users,"events":[],"summaries":{},"today":instant(now).astimezone(MSK).date().isoformat()}
     for event in sorted(state["events"].values(),key=lambda e:(e["localDate"],e.get("startAtUtc") or "",e["eventId"])):
         day=date.fromisoformat(event["localDate"])
         clock=instant(event["startAtUtc"]).astimezone(MSK).strftime("%H:%M") if event.get("startAtUtc") else "время уточняется"
@@ -983,7 +983,8 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         e=state["events"].get(parts[1]) if len(parts)==4 else None
         if not e or not upcoming(e,now) or str(e["attendanceRevision"])!=parts[3] or not subscribed(state,parts[2],e["scope"]):
             say("Меню отметок устарело. Откройте статистику события заново.");return
-        say(state["users"][parts[2]]["fullName"]+"\n\n"+event_card(e,now),[[{"text":"✅ Будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|y"},{"text":"❌ Не будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|n"}]])
+        queue_dialog(state,uid,state["users"][parts[2]]["fullName"]+"\n\n"+event_card(e,now),now,
+            [[{"text":"✅ Будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|y"},{"text":"❌ Не будет","data":f"ma|{parts[1]}|{parts[2]}|{parts[3]}|n"}]],active_event=e)
         return
     if data and data.startswith(("mark|","ma|")):
         parts=data.split("|")
@@ -1016,7 +1017,8 @@ def _handle_private(state, uid, chat, text, data, now, setup_secret):
         event=state["events"].get(eid)
         if not event or event["kind"]!="training" or not upcoming(event,now):
             say("Тренировка завершилась или отменена. Откройте актуальный список.",menu=True);return
-        say("Управление отдельной тренировкой",[[{"text":"Отменить","data":"tcancel|"+eid},{"text":"Восстановить","data":"trestore|"+eid}],[{"text":"Перенести","data":"tmove|"+eid}]])
+        queue_dialog(state,uid,"Управление отдельной тренировкой",now,
+            [[{"text":"Отменить","data":"tcancel|"+eid},{"text":"Восстановить","data":"trestore|"+eid}],[{"text":"Перенести","data":"tmove|"+eid}]],active_event=event)
         return
     if data and data.startswith(("tcancel|","trestore|","tmove|")):
         action,eid=data.split("|",1)
@@ -1506,7 +1508,12 @@ class VolleyBot:
                 return
         else:
             def fence():
-                self.check_lease(self.repo.read(),self.clock())
+                def renew(current):
+                    checked_at=self.clock()
+                    self.check_lease(current,checked_at)
+                    if instant(current["lease"]["expiresAt"])-instant(checked_at)<timedelta(seconds=90):
+                        current["lease"]["expiresAt"]=iso(instant(checked_at)+timedelta(seconds=120))
+                self.repo.transact(renew)
             try:
                 await asyncio.to_thread(self.attendance.sync,snapshot,fence)
             except FencedError:
