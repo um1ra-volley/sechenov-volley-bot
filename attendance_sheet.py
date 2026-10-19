@@ -26,7 +26,7 @@ def matrix_values(old,snapshot):
     ids=old[1][4:] if old else []
     if any(not isinstance(eid,str) or not eid for eid in ids) or len(set(ids))!=len(ids):
         raise AttendanceSheetError("Повторяющиеся или пустые ID мероприятий")
-    headers={eid:str(old[0][index+4]) if len(old[0])>index+4 else eid for index,eid in enumerate(ids)}
+    headers={eid:str(old[0][index+4] or eid) if len(old[0])>index+4 else eid for index,eid in enumerate(ids)}
     people={}
     for row in old[2:]:
         if not any(row):
@@ -49,7 +49,7 @@ def matrix_values(old,snapshot):
     def order(eid):
         found=re.search(r"(\d{2})\.(\d{2})\.(\d{4})",headers[eid])
         day=found[3]+found[2]+found[1] if found else "99999999"
-        closed=(day<snapshot["today"].replace("-","") or headers[eid].splitlines()[-1] in
+        closed=(day<snapshot["today"].replace("-","") or (headers[eid].splitlines() or [""])[-1] in
             ("ПРОШЛО","ОТМЕНЕНО","СНЯТО ИЗ РАСПИСАНИЯ"))
         return (closed,-int(day) if closed else int(day),headers[eid],eid)
     ids.sort(key=order)
