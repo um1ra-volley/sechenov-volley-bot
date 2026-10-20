@@ -374,7 +374,7 @@ def can_deliver(state, notice, now):
     if "followup" in notice.get("fulfills",[notice["type"]]):
         p=state["participation"].get(eid+":"+uid,{})
         if notice["type"]=="followup":
-            if answer_complete(p,e):
+            if instant(now)<event_instant(e)-timedelta(days=7) or answer_complete(p,e):
                 return False
             if notice.get("followupAfter") and latest_prompt_at(state,e,uid,exclude=notice["notificationId"])!=notice["followupAfter"]:
                 return False
@@ -469,7 +469,8 @@ def plan_notifications(state, now):
                 kinds.append("training_2day")
             if clock>=start-timedelta(days=1) and not has_notice(state,e,uid,"day"):
                 kinds.append("day")
-            if not answer_complete(p,e) and last_prompt and clock>=instant(last_prompt)+timedelta(days=1) and not waiting_prompt(state,e,uid):
+            if (clock>=start-timedelta(days=7) and not answer_complete(p,e) and last_prompt
+                and clock>=instant(last_prompt)+timedelta(days=1) and not waiting_prompt(state,e,uid)):
                 kinds.append("followup")
             if not kinds:
                 continue
